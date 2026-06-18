@@ -66,9 +66,25 @@ def make_frontend_redirect(params: dict) -> RedirectResponse:
     return RedirectResponse(f"{get_frontend_url()}/?{urlencode(params)}")
 
 def ensure_user_settings(cursor, user_id: int):
+    if not user_id:
+        raise DatabaseError("Cannot create settings without a valid user id")
     cursor.execute("SELECT id FROM settings WHERE user_id = ?", (user_id,))
     if not cursor.fetchone():
         cursor.execute("INSERT INTO settings (user_id) VALUES (?)", (user_id,))
+
+def get_required_insert_id(cursor, fallback_query: str, fallback_params: tuple, entity_name: str) -> int:
+    inserted_id = cursor.lastrowid
+    if inserted_id:
+        return inserted_id
+
+    cursor.execute(fallback_query, fallback_params)
+    row = cursor.fetchone()
+    if row and row.get("id"):
+        return row["id"]
+
+    raise DatabaseError(
+        f"Could not read inserted {entity_name} id. Check the Supabase exec_sql function returns SELECT and RETURNING rows."
+    )
 
 def make_unique_username(cursor, email: str, fallback_name: str = "") -> str:
     email_prefix = email.split("@")[0] if email and "@" in email else fallback_name or "google_user"
@@ -109,10 +125,15 @@ def register(user: models.UserRegister):
             "INSERT INTO users (username, password_hash, email) VALUES (?, ?, ?)",
             (user.username, hashed_pwd, user.email)
         )
-        user_id = cursor.lastrowid
+        user_id = get_required_insert_id(
+            cursor,
+            "SELECT id FROM users WHERE username = ?",
+            (user.username,),
+            "user",
+        )
         
         # Create default settings
-        cursor.execute("INSERT INTO settings (user_id) VALUES (?)", (user_id,))
+        ensure_user_settings(cursor, user_id)
         
         conn.commit()
     except DatabaseError as e:
@@ -237,7 +258,12 @@ def google_callback(code: Optional[str] = None, error: Optional[str] = None):
                 """,
                 (username, random_password_hash, email, google_id, "google"),
             )
-            user_id = cursor.lastrowid
+            user_id = get_required_insert_id(
+                cursor,
+                "SELECT id FROM users WHERE google_id = ?",
+                (google_id,),
+                "Google user",
+            )
             ensure_user_settings(cursor, user_id)
 
         conn.commit()
