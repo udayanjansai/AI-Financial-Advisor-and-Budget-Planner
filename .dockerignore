@@ -1,0 +1,14 @@
+.env
+.git
+.pytest_cache
+frontend/node_modules
+frontend/dist
+backend/__pycache__
+backend/tests/__pycache__
+backend/.pytest_cache
+backend/finance.db
+backend/tests/test_finance.db
+backend/mock_emails
+*.pyc
+*.pyo
+*.log

@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+python-jose[cryptography]
+bcrypt
+requests
+google-generativeai
+numpy
+pandas
+scikit-learn
+xgboost
