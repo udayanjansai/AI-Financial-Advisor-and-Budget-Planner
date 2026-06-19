@@ -28,6 +28,17 @@ import RecurringExpenses from "./components/RecurringExpenses";
 
 export default function App() {
   const googleAuthEnabled = import.meta.env.VITE_ENABLE_GOOGLE_AUTH === "true";
+  const pageMeta = {
+    dashboard: { title: "Dashboard", subtitle: "Live financial overview and spending intelligence" },
+    expenses: { title: "Expenses", subtitle: "Track daily spend and manage outgoing transactions" },
+    recurring: { title: "Recurring Expenses", subtitle: "Automate scheduled payments and subscriptions" },
+    income: { title: "Income", subtitle: "Record salary, freelance, and other money inflows" },
+    budget: { title: "Budget Planner", subtitle: "Set limits and monitor category discipline" },
+    goals: { title: "Financial Goals", subtitle: "Plan target savings with AI-backed progress checks" },
+    ocr: { title: "Receipt Scanner", subtitle: "Extract transaction details from receipt images" },
+    chatbot: { title: "AI Advisor", subtitle: "Ask finance questions using your own data" },
+    settings: { title: "Settings", subtitle: "Manage alerts and reporting preferences" }
+  };
   const [token, setToken] = useState(localStorage.getItem("token") || "");
   const [user, setUser] = useState(null);
   const [activeTab, setActiveTab] = useState("dashboard");
@@ -177,6 +188,8 @@ export default function App() {
       setExpenseAlert(null);
     }, 8000);
   };
+
+  const currentPage = pageMeta[activeTab] || pageMeta.dashboard;
 
   // Auth View Render
   if (!token || !user) {
@@ -375,10 +388,13 @@ export default function App() {
       <div className="sidebar">
         <div>
           <div className="brand">
-            <div className="brand-icon" style={{ background: "linear-gradient(135deg, #a855f7, #6366f1)" }}>
+            <div className="brand-icon">
               <Sparkles size={20} style={{ color: "white" }} />
             </div>
-            <div className="brand-name">FinTracker AI</div>
+            <div>
+              <div className="brand-name">FinTracker AI</div>
+              <div className="brand-tagline">Plan. Track. Grow.</div>
+            </div>
           </div>
 
           <div className="user-badge" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", padding: "10px 12px", gap: "8px" }}>
@@ -461,31 +477,50 @@ export default function App() {
 
       {/* Main Panel Content */}
       <div className="main-content">
-        {activeTab === "dashboard" && (
-          <Dashboard token={token} activeAlert={expenseAlert} dataVersion={dataVersion} />
-        )}
-        {activeTab === "expenses" && (
-          <Expenses token={token} onAddExpense={handleAddExpenseAlert} dataVersion={dataVersion} triggerRefresh={triggerRefresh} />
-        )}
-        {activeTab === "recurring" && (
-          <RecurringExpenses token={token} dataVersion={dataVersion} triggerRefresh={triggerRefresh} />
-        )}
-        {activeTab === "income" && (
-          <Income token={token} dataVersion={dataVersion} triggerRefresh={triggerRefresh} />
-        )}
-        {activeTab === "budget" && (
-          <Budget token={token} onAddExpense={handleAddExpenseAlert} dataVersion={dataVersion} triggerRefresh={triggerRefresh} />
-        )}
-        {activeTab === "goals" && (
-          <Goals token={token} dataVersion={dataVersion} triggerRefresh={triggerRefresh} />
-        )}
-        {activeTab === "ocr" && (
-          <OCRScanner token={token} onAddExpense={handleAddExpenseAlert} triggerRefresh={triggerRefresh} />
-        )}
-        {activeTab === "chatbot" && (
-          <Chatbot token={token} />
-        )}
-        {activeTab === "settings" && renderSettingsPage()}
+        <div className="workspace-shell">
+          <div className="workspace-header">
+            <div>
+              <div className="workspace-eyebrow">Workspace</div>
+              <h1>{currentPage.title}</h1>
+              <p>{currentPage.subtitle}</p>
+            </div>
+            <div className="workspace-user">
+              <div className="workspace-avatar">{user.username[0].toUpperCase()}</div>
+              <div>
+                <strong>{user.username}</strong>
+                <span>{user.email}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="workspace-body">
+            {activeTab === "dashboard" && (
+              <Dashboard token={token} activeAlert={expenseAlert} dataVersion={dataVersion} />
+            )}
+            {activeTab === "expenses" && (
+              <Expenses token={token} onAddExpense={handleAddExpenseAlert} dataVersion={dataVersion} triggerRefresh={triggerRefresh} />
+            )}
+            {activeTab === "recurring" && (
+              <RecurringExpenses token={token} dataVersion={dataVersion} triggerRefresh={triggerRefresh} />
+            )}
+            {activeTab === "income" && (
+              <Income token={token} dataVersion={dataVersion} triggerRefresh={triggerRefresh} />
+            )}
+            {activeTab === "budget" && (
+              <Budget token={token} onAddExpense={handleAddExpenseAlert} dataVersion={dataVersion} triggerRefresh={triggerRefresh} />
+            )}
+            {activeTab === "goals" && (
+              <Goals token={token} dataVersion={dataVersion} triggerRefresh={triggerRefresh} />
+            )}
+            {activeTab === "ocr" && (
+              <OCRScanner token={token} onAddExpense={handleAddExpenseAlert} triggerRefresh={triggerRefresh} />
+            )}
+            {activeTab === "chatbot" && (
+              <Chatbot token={token} />
+            )}
+            {activeTab === "settings" && renderSettingsPage()}
+          </div>
+        </div>
       </div>
     </div>
   );

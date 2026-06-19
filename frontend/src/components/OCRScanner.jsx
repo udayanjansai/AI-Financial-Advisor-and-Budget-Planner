@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Upload, FileText, CheckCircle, AlertCircle, FileUp, RefreshCw } from "lucide-react";
+import { Upload, FileText, CheckCircle, AlertCircle, FileUp, RefreshCw, X } from "lucide-react";
 
 export default function OCRScanner({ token, onAddExpense, triggerRefresh }) {
   const [file, setFile] = useState(null);
@@ -11,9 +11,44 @@ export default function OCRScanner({ token, onAddExpense, triggerRefresh }) {
   // OCR Results State
   const [ocrData, setOcrData] = useState(null);
 
+  const normalizeReceiptDate = (value) => {
+    if (!value) return new Date().toISOString().split("T")[0];
+
+    const cleaned = value.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(cleaned)) return cleaned;
+
+    const numericMatch = cleaned.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{2}|\d{4})$/);
+    if (numericMatch) {
+      const first = parseInt(numericMatch[1], 10);
+      const second = parseInt(numericMatch[2], 10);
+      const rawYear = numericMatch[3];
+      const year = rawYear.length === 2 ? 2000 + parseInt(rawYear, 10) : parseInt(rawYear, 10);
+      const month = first > 12 ? second : first;
+      const day = first > 12 ? first : second;
+      const date = new Date(year, month - 1, day);
+      if (!Number.isNaN(date.getTime())) {
+        const yyyy = date.getFullYear();
+        const mm = String(date.getMonth() + 1).padStart(2, "0");
+        const dd = String(date.getDate()).padStart(2, "0");
+        return `${yyyy}-${mm}-${dd}`;
+      }
+    }
+
+    const parsed = new Date(cleaned);
+    if (!Number.isNaN(parsed.getTime())) {
+      const yyyy = parsed.getFullYear();
+      const mm = String(parsed.getMonth() + 1).padStart(2, "0");
+      const dd = String(parsed.getDate()).padStart(2, "0");
+      return `${yyyy}-${mm}-${dd}`;
+    }
+
+    return new Date().toISOString().split("T")[0];
+  };
+
   const handleFileChange = (e) => {
     const selected = e.target.files[0];
     if (selected) {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
       setFile(selected);
       setPreviewUrl(URL.createObjectURL(selected));
       setOcrData(null);
@@ -30,6 +65,7 @@ export default function OCRScanner({ token, onAddExpense, triggerRefresh }) {
     e.preventDefault();
     const droppedFile = e.dataTransfer.files[0];
     if (droppedFile && droppedFile.type.startsWith("image/")) {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
       setFile(droppedFile);
       setPreviewUrl(URL.createObjectURL(droppedFile));
       setOcrData(null);
@@ -59,7 +95,10 @@ export default function OCRScanner({ token, onAddExpense, triggerRefresh }) {
 
       if (res.ok) {
         const data = await res.json();
-        setOcrData(data);
+        setOcrData({
+          ...data,
+          date: normalizeReceiptDate(data.date)
+        });
       } else {
         const err = await res.json();
         setError(err.detail || "Scanning failed. Please make sure the receipt is legible.");
@@ -90,7 +129,7 @@ export default function OCRScanner({ token, onAddExpense, triggerRefresh }) {
         body: JSON.stringify({
           amount: parseFloat(ocrData.amount),
           category: ocrData.category,
-          date: ocrData.date,
+          date: normalizeReceiptDate(ocrData.date),
           description: `${ocrData.merchant}`
         })
       });
@@ -111,12 +150,21 @@ export default function OCRScanner({ token, onAddExpense, triggerRefresh }) {
           });
         }
       } else {
-        const err = await res.json();
-        setError(err.detail || "Failed to record expense");
-      }
-    } catch (err) {
-      setError("Failed to add expense. Try again.");
+      const err = await res.json().catch(() => ({}));
+      setError(err.detail || "Failed to record expense");
     }
+  } catch (err) {
+      setError(`Failed to add expense. ${err.message || "Try again."}`);
+    }
+  };
+
+  const clearSelectedReceipt = () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setFile(null);
+    setPreviewUrl(null);
+    setOcrData(null);
+    setError("");
+    setSuccess(false);
   };
 
   const categories = ["Food", "Transport", "Entertainment", "Shopping", "Utilities", "Medical", "Others"];
@@ -142,6 +190,31 @@ export default function OCRScanner({ token, onAddExpense, triggerRefresh }) {
           >
             {previewUrl ? (
               <div style={{ width: "100%", height: "100%", position: "relative" }}>
+                <button
+                  type="button"
+                  onClick={clearSelectedReceipt}
+                  disabled={scanning}
+                  title="Remove selected image"
+                  style={{
+                    position: "absolute",
+                    top: "12px",
+                    right: "12px",
+                    zIndex: 2,
+                    width: "36px",
+                    height: "36px",
+                    borderRadius: "10px",
+                    border: "1px solid rgba(255, 255, 255, 0.16)",
+                    background: "rgba(2, 6, 23, 0.78)",
+                    color: "white",
+                    cursor: scanning ? "not-allowed" : "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    opacity: scanning ? 0.5 : 1
+                  }}
+                >
+                  <X size={18} />
+                </button>
                 <img 
                   src={previewUrl} 
                   alt="Receipt Preview" 
@@ -182,15 +255,20 @@ export default function OCRScanner({ token, onAddExpense, triggerRefresh }) {
           </div>
 
           {file && !ocrData && (
-            <button className="btn" onClick={startScan} disabled={scanning} style={{ width: "100%" }}>
-              {scanning ? (
-                <>
-                  <RefreshCw size={18} className="spin" style={{ animation: "spin 1.5s linear infinite" }} /> Scanning Receipt...
-                </>
-              ) : (
-                "Start AI Parsing"
-              )}
-            </button>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "10px" }}>
+              <button className="btn" onClick={startScan} disabled={scanning} style={{ width: "100%" }}>
+                {scanning ? (
+                  <>
+                    <RefreshCw size={18} className="spin" style={{ animation: "spin 1.5s linear infinite" }} /> Scanning Receipt...
+                  </>
+                ) : (
+                  "Start AI Parsing"
+                )}
+              </button>
+              <button className="btn btn-secondary" onClick={clearSelectedReceipt} disabled={scanning} type="button">
+                Remove
+              </button>
+            </div>
           )}
 
           {error && (
