@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Save, Plus, AlertTriangle } from "lucide-react";
+import ConfirmDialog from "./ConfirmDialog";
 
 export default function Budget({ token, onAddExpense, dataVersion, triggerRefresh }) {
   const [data, setData] = useState(null);
@@ -9,6 +10,9 @@ export default function Budget({ token, onAddExpense, dataVersion, triggerRefres
   const [newBudgetCategory, setNewBudgetCategory] = useState("Food");
   const [newBudgetLimit, setNewBudgetLimit] = useState("");
   const [budgetMonth, setBudgetMonth] = useState(new Date().toISOString().split("T")[0].substring(0, 7)); // YYYY-MM
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [budgetError, setBudgetError] = useState("");
   
   const categories = ["Food", "Transport", "Entertainment", "Shopping", "Utilities", "Medical", "Others"];
 
@@ -58,29 +62,33 @@ export default function Budget({ token, onAddExpense, dataVersion, triggerRefres
     }
   };
 
-  const handleDeleteBudget = async (budget) => {
-    if (!budget?.id) {
-      alert("Could not remove this budget because its ID is missing. Please refresh and try again.");
+  const handleDeleteBudget = async () => {
+    if (!deleteTarget?.id) {
+      setBudgetError("Could not remove this budget because its ID is missing. Please refresh and try again.");
       return;
     }
 
-    if (!confirm(`Are you sure you want to delete the budget for ${budget.category}?`)) return;
+    setDeleteLoading(true);
+    setBudgetError("");
     try {
-      const res = await fetch(`/api/budgets/${budget.id}`, {
+      const res = await fetch(`/api/budgets/${deleteTarget.id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
+        setDeleteTarget(null);
         if (triggerRefresh) triggerRefresh();
         else fetchBudgetData();
       } else {
         const errorText = await res.text();
         console.error("Failed to delete budget", errorText);
-        alert("Failed to remove this budget. Please try again.");
+        setBudgetError("Failed to remove this budget. Please try again.");
       }
     } catch (err) {
       console.error(err);
-      alert("Error removing budget. Please try again.");
+      setBudgetError("Error removing budget. Please try again.");
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -105,6 +113,13 @@ export default function Budget({ token, onAddExpense, dataVersion, triggerRefres
               <span>{al.message} ({al.percentage}% used of ₹{al.limit.toLocaleString()} limit)</span>
             </div>
           ))}
+        </div>
+      )}
+
+      {budgetError && (
+        <div className="alert-bar alert-danger">
+          <AlertTriangle size={18} />
+          <span>{budgetError}</span>
         </div>
       )}
 
@@ -182,7 +197,7 @@ export default function Budget({ token, onAddExpense, dataVersion, triggerRefres
                         <span style={{ fontWeight: "600", color: "white" }}>{b.category}</span>
                         <button 
                           type="button"
-                          onClick={() => handleDeleteBudget(b)}
+                          onClick={() => setDeleteTarget(b)}
                           style={{ background: "transparent", border: "none", color: "var(--text-dim)", cursor: "pointer", fontSize: "11px" }}
                           onMouseEnter={(e) => e.currentTarget.style.color = "var(--danger)"}
                           onMouseLeave={(e) => e.currentTarget.style.color = "var(--text-dim)"}
@@ -208,6 +223,16 @@ export default function Budget({ token, onAddExpense, dataVersion, triggerRefres
         </div>
 
       </div>
+
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        title="Remove budget?"
+        message={deleteTarget ? `This will remove the ${deleteTarget.category} budget for ${deleteTarget.month || budgetMonth}. Spending entries will stay untouched.` : ""}
+        confirmLabel="Remove budget"
+        loading={deleteLoading}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={handleDeleteBudget}
+      />
     </div>
   );
 }

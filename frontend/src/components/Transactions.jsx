@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from "react";
 import { PlusCircle, Trash2, ArrowUpRight, ArrowDownRight, Search } from "lucide-react";
+import ConfirmDialog from "./ConfirmDialog";
 
 export default function Transactions({ token, onAddExpense }) {
   const [incomes, setIncomes] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   
   // Form States
   const [incomeAmount, setIncomeAmount] = useState("");
@@ -106,7 +109,6 @@ export default function Transactions({ token, onAddExpense }) {
   };
 
   const handleDeleteIncome = async (id) => {
-    if (!confirm("Are you sure you want to delete this income?")) return;
     try {
       const res = await fetch(`/api/income/${id}`, {
         method: "DELETE",
@@ -119,7 +121,6 @@ export default function Transactions({ token, onAddExpense }) {
   };
 
   const handleDeleteExpense = async (id) => {
-    if (!confirm("Are you sure you want to delete this expense?")) return;
     try {
       const res = await fetch(`/api/expenses/${id}`, {
         method: "DELETE",
@@ -128,6 +129,21 @@ export default function Transactions({ token, onAddExpense }) {
       if (res.ok) fetchData();
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleteLoading(true);
+    try {
+      if (deleteTarget.type === "income") {
+        await handleDeleteIncome(deleteTarget.id);
+      } else {
+        await handleDeleteExpense(deleteTarget.id);
+      }
+      setDeleteTarget(null);
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -305,8 +321,8 @@ export default function Transactions({ token, onAddExpense }) {
                         borderRadius: "6px", 
                         fontSize: "12px", 
                         fontWeight: "600",
-                        background: t.type === "income" ? "rgba(16, 185, 129, 0.15)" : "rgba(99, 102, 241, 0.15)",
-                        color: t.type === "income" ? "var(--success)" : "var(--primary)"
+                        background: t.type === "income" ? "rgba(52, 211, 153, 0.12)" : "rgba(251, 113, 133, 0.12)",
+                        color: t.type === "income" ? "var(--success)" : "var(--danger)"
                       }}>
                         {t.category || t.source}
                       </span>
@@ -319,14 +335,14 @@ export default function Transactions({ token, onAddExpense }) {
                       {t.type === "income" ? "INCOME" : "EXPENSE"}
                     </td>
                     <td style={{ 
-                      color: "white", 
+                      color: t.type === "income" ? "var(--success)" : "var(--danger)", 
                       fontWeight: "700" 
                     }}>
                       {t.type === "income" ? "+" : "-"} ₹{t.amount.toLocaleString()}
                     </td>
                     <td style={{ textAlign: "right" }}>
                       <button 
-                        onClick={() => t.type === "income" ? handleDeleteIncome(t.id) : handleDeleteExpense(t.id)}
+                        onClick={() => setDeleteTarget(t)}
                         style={{ background: "transparent", border: "none", color: "var(--text-dim)", cursor: "pointer", transition: "var(--transition-smooth)" }}
                         onMouseEnter={(e) => e.currentTarget.style.color = "var(--danger)"}
                         onMouseLeave={(e) => e.currentTarget.style.color = "var(--text-dim)"}
@@ -341,6 +357,16 @@ export default function Transactions({ token, onAddExpense }) {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        title={`Remove ${deleteTarget?.type || "transaction"}?`}
+        message={deleteTarget ? `This will delete ${deleteTarget.name || deleteTarget.category || "this transaction"} of ₹${Number(deleteTarget.amount).toLocaleString()}. Dashboard totals will update after removal.` : ""}
+        confirmLabel={`Remove ${deleteTarget?.type || "transaction"}`}
+        loading={deleteLoading}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={handleConfirmDelete}
+      />
     </div>
   );
 }

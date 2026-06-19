@@ -26,6 +26,7 @@ import {
   TrendingDown,
   ArrowUpRight
 } from "lucide-react";
+import ConfirmDialog from "./ConfirmDialog";
 
 // Register ChartJS modules
 ChartJS.register(
@@ -41,6 +42,8 @@ export default function Goals({ token, dataVersion, triggerRefresh }) {
   const [goals, setGoals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   // Expandable AI Analysis state
   const [activeAnalysisId, setActiveAnalysisId] = useState(null);
@@ -152,22 +155,26 @@ export default function Goals({ token, dataVersion, triggerRefresh }) {
     }
   };
 
-  const handleDeleteGoal = async (id) => {
-    if (!confirm("Are you sure you want to delete this goal?")) return;
+  const handleDeleteGoal = async () => {
+    if (!deleteTarget) return;
+    setDeleteLoading(true);
     try {
-      const res = await fetch(`/api/goals/${id}`, {
+      const res = await fetch(`/api/goals/${deleteTarget.id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
-        if (activeAnalysisId === id) {
+        if (activeAnalysisId === deleteTarget.id) {
           setActiveAnalysisId(null);
         }
+        setDeleteTarget(null);
         if (triggerRefresh) triggerRefresh();
         else fetchGoals();
       }
     } catch (err) {
       console.error(err);
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -366,7 +373,7 @@ export default function Goals({ token, dataVersion, triggerRefresh }) {
               </div>
             )}
 
-            <button type="submit" className="btn" style={{ width: "100%", background: "linear-gradient(135deg, var(--primary), #a855f7)", marginTop: "10px" }}>
+            <button type="submit" className="btn" style={{ width: "100%", marginTop: "10px" }}>
               <Plus size={16} /> Create Goal
             </button>
           </form>

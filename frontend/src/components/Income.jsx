@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { PlusCircle, Trash2, ArrowUpRight, Search } from "lucide-react";
+import ConfirmDialog from "./ConfirmDialog";
 
 export default function Income({ token, dataVersion, triggerRefresh }) {
   const [incomes, setIncomes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   
   // Form States
   const [incomeAmount, setIncomeAmount] = useState("");
@@ -61,19 +64,23 @@ export default function Income({ token, dataVersion, triggerRefresh }) {
     }
   };
 
-  const handleDeleteIncome = async (id) => {
-    if (!confirm("Are you sure you want to delete this income source?")) return;
+  const handleDeleteIncome = async () => {
+    if (!deleteTarget) return;
+    setDeleteLoading(true);
     try {
-      const res = await fetch(`/api/income/${id}`, {
+      const res = await fetch(`/api/income/${deleteTarget.id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
+        setDeleteTarget(null);
         if (triggerRefresh) triggerRefresh();
         else fetchIncomes();
       }
     } catch (err) {
       console.error(err);
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -191,12 +198,12 @@ export default function Income({ token, dataVersion, triggerRefresh }) {
                       </span>
                     </td>
                     <td>{t.description || "—"}</td>
-                    <td style={{ color: "white", fontWeight: "700" }}>
+                    <td style={{ color: "var(--success)", fontWeight: "700" }}>
                       + ₹{t.amount.toLocaleString()}
                     </td>
                     <td style={{ textAlign: "right" }}>
                       <button 
-                        onClick={() => handleDeleteIncome(t.id)}
+                        onClick={() => setDeleteTarget(t)}
                         style={{ background: "transparent", border: "none", color: "var(--text-dim)", cursor: "pointer", transition: "var(--transition-smooth)" }}
                         onMouseEnter={(e) => e.currentTarget.style.color = "var(--danger)"}
                         onMouseLeave={(e) => e.currentTarget.style.color = "var(--text-dim)"}
@@ -211,6 +218,16 @@ export default function Income({ token, dataVersion, triggerRefresh }) {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        title="Remove income?"
+        message={deleteTarget ? `This will delete ${deleteTarget.source} income of ₹${Number(deleteTarget.amount).toLocaleString()}. Dashboard totals will update after removal.` : ""}
+        confirmLabel="Remove income"
+        loading={deleteLoading}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={handleDeleteIncome}
+      />
     </div>
   );
 }

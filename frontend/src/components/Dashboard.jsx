@@ -300,12 +300,12 @@ export default function Dashboard({ token, activeAlert, dataVersion }) {
         backgroundColor: [
           "rgba(16, 185, 129, 0.45)", // Success Green
           "rgba(239, 68, 68, 0.45)",  // Danger Red
-          "rgba(99, 102, 241, 0.45)"  // Primary Purple
+          "rgba(52, 211, 153, 0.35)"  // Savings Green
         ],
         borderColor: [
           "var(--success)",
           "var(--danger)",
-          "var(--primary)"
+          "var(--success)"
         ],
         borderWidth: 1.5,
         borderRadius: 8,
@@ -429,10 +429,10 @@ export default function Dashboard({ token, activeAlert, dataVersion }) {
       
       if (spent > 0) {
         textColor = "#ffffff";
-        if (spent < 500) colorClass = "rgba(99, 102, 241, 0.2)";
-        else if (spent < 1500) colorClass = "rgba(99, 102, 241, 0.45)";
-        else if (spent < 4000) colorClass = "rgba(99, 102, 241, 0.7)";
-        else colorClass = "rgba(168, 85, 247, 0.9)"; // High spending in bright violet
+        if (spent < 500) colorClass = "rgba(251, 113, 133, 0.16)";
+        else if (spent < 1500) colorClass = "rgba(251, 113, 133, 0.34)";
+        else if (spent < 4000) colorClass = "rgba(244, 63, 94, 0.58)";
+        else colorClass = "rgba(225, 29, 72, 0.86)";
         if (earned > 0) borderColor = "rgba(16, 185, 129, 0.75)";
       } else if (hasTransactions) {
         textColor = "#ffffff";
@@ -510,9 +510,9 @@ export default function Dashboard({ token, activeAlert, dataVersion }) {
         <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "6px", fontSize: "11px", color: "var(--text-dim)", marginTop: "12px" }}>
           <span>Low</span>
           <span style={{ width: "10px", height: "10px", borderRadius: "2px", background: "rgba(255, 255, 255, 0.02)" }} />
-          <span style={{ width: "10px", height: "10px", borderRadius: "2px", background: "rgba(99, 102, 241, 0.2)" }} />
-          <span style={{ width: "10px", height: "10px", borderRadius: "2px", background: "rgba(99, 102, 241, 0.7)" }} />
-          <span style={{ width: "10px", height: "10px", borderRadius: "2px", background: "rgba(168, 85, 247, 0.9)" }} />
+          <span style={{ width: "10px", height: "10px", borderRadius: "2px", background: "rgba(251, 113, 133, 0.16)" }} />
+          <span style={{ width: "10px", height: "10px", borderRadius: "2px", background: "rgba(244, 63, 94, 0.58)" }} />
+          <span style={{ width: "10px", height: "10px", borderRadius: "2px", background: "rgba(225, 29, 72, 0.86)" }} />
           <span>High</span>
         </div>
       </div>
@@ -566,7 +566,7 @@ export default function Dashboard({ token, activeAlert, dataVersion }) {
           </div>
           <div>
             <span style={{ color: "var(--text-muted)", fontSize: "14px" }}>Total Income</span>
-            <div className="summary-val">₹{monthly_summary.income.toLocaleString()}</div>
+            <div className="summary-val" style={{ color: "var(--success)" }}>₹{monthly_summary.income.toLocaleString()}</div>
           </div>
         </div>
 
@@ -576,17 +576,17 @@ export default function Dashboard({ token, activeAlert, dataVersion }) {
           </div>
           <div>
             <span style={{ color: "var(--text-muted)", fontSize: "14px" }}>Total Expenses</span>
-            <div className="summary-val">₹{monthly_summary.expenses.toLocaleString()}</div>
+            <div className="summary-val" style={{ color: "var(--danger)" }}>₹{monthly_summary.expenses.toLocaleString()}</div>
           </div>
         </div>
 
         <div className="glass-card summary-card">
-          <div className="summary-icon-wrapper" style={{ background: "rgba(99, 102, 241, 0.15)", color: "var(--primary)" }}>
+          <div className="summary-icon-wrapper" style={{ background: "rgba(52, 211, 153, 0.12)", color: "var(--success)" }}>
             <PiggyBank size={24} />
           </div>
           <div>
             <span style={{ color: "var(--text-muted)", fontSize: "14px" }}>Total Savings</span>
-            <div className="summary-val">₹{monthly_summary.savings.toLocaleString()}</div>
+            <div className="summary-val" style={{ color: "var(--success)" }}>₹{monthly_summary.savings.toLocaleString()}</div>
           </div>
         </div>
       </div>
@@ -674,7 +674,7 @@ export default function Dashboard({ token, activeAlert, dataVersion }) {
           {/* AI Spending Personality */}
           <div className="glass-card">
             <h3 style={{ fontSize: "18px", color: "white", display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px" }}>
-              <Brain size={18} style={{ color: "var(--warning)" }} /> AI Spending Personality
+              <Brain size={18} style={{ color: "var(--ai)" }} /> AI Spending Personality
             </h3>
             {personalityLoading ? (
               <div style={{ textAlign: "center", color: "var(--text-muted)", padding: "20px 0" }}>Analyzing personality...</div>
@@ -752,7 +752,7 @@ export default function Dashboard({ token, activeAlert, dataVersion }) {
           {/* AI Spending Analyzer */}
           <div className="glass-card">
             <h3 style={{ fontSize: "18px", color: "white", display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px" }}>
-              <Brain size={18} style={{ color: "var(--primary)" }} /> AI Spending Analyzer
+              <Brain size={18} style={{ color: "var(--ai)" }} /> AI Spending Analyzer
             </h3>
             
             {aiAnalysis ? (
@@ -775,7 +775,7 @@ export default function Dashboard({ token, activeAlert, dataVersion }) {
           {/* Future Expense Predictions */}
           <div className="glass-card">
             <h3 style={{ fontSize: "18px", color: "white", display: "flex", alignItems: "center", gap: "8px", marginBottom: "16px" }}>
-              <Sparkles size={18} style={{ color: "var(--warning)" }} /> Future Expense Prediction
+              <Sparkles size={18} style={{ color: "var(--ai)" }} /> Future Expense Prediction
             </h3>
             
             {predData ? (
@@ -801,7 +801,7 @@ export default function Dashboard({ token, activeAlert, dataVersion }) {
             ) : (
               <div style={{ textAlign: "center", padding: "16px 0" }}>
                 <p style={{ color: "var(--text-muted)", fontSize: "13px", marginBottom: "16px" }}>Train ML algorithms to forecast next month's total expenses.</p>
-                <button className="btn" onClick={fetchPredictions} disabled={predLoading} style={{ width: "100%", background: "var(--warning)" }}>
+                <button className="btn btn-ai" onClick={fetchPredictions} disabled={predLoading} style={{ width: "100%" }}>
                   {predLoading ? "Training..." : "Forecast Next Month"}
                 </button>
               </div>
@@ -868,7 +868,7 @@ export default function Dashboard({ token, activeAlert, dataVersion }) {
                     <h4 style={{ fontSize: "12px", color: "white", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "8px" }}>Category Breakdown</h4>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
                       {Object.entries(selectedDayDetails.categoryBreakdown).map(([cat, amt]) => (
-                        <span key={cat} style={{ fontSize: "12px", background: "rgba(99, 102, 241, 0.15)", color: "var(--primary)", padding: "4px 8px", borderRadius: "6px", fontWeight: "600" }}>
+                        <span key={cat} style={{ fontSize: "12px", background: "rgba(251, 113, 133, 0.12)", color: "var(--danger)", padding: "4px 8px", borderRadius: "6px", fontWeight: "600" }}>
                           {cat}: ₹{amt.toLocaleString()}
                         </span>
                       ))}

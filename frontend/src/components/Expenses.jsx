@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { PlusCircle, Trash2, ArrowDownRight, Search } from "lucide-react";
+import ConfirmDialog from "./ConfirmDialog";
 
 export default function Expenses({ token, onAddExpense, dataVersion, triggerRefresh }) {
   const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   
   // Form States
@@ -67,19 +70,23 @@ export default function Expenses({ token, onAddExpense, dataVersion, triggerRefr
     }
   };
 
-  const handleDeleteExpense = async (id) => {
-    if (!confirm("Are you sure you want to delete this expense?")) return;
+  const handleDeleteExpense = async () => {
+    if (!deleteTarget) return;
+    setDeleteLoading(true);
     try {
-      const res = await fetch(`/api/expenses/${id}`, {
+      const res = await fetch(`/api/expenses/${deleteTarget.id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
+        setDeleteTarget(null);
         if (triggerRefresh) triggerRefresh();
         else fetchExpenses();
       }
     } catch (err) {
       console.error(err);
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -195,19 +202,19 @@ export default function Expenses({ token, onAddExpense, dataVersion, triggerRefr
                         borderRadius: "6px", 
                         fontSize: "12px", 
                         fontWeight: "600",
-                        background: "rgba(99, 102, 241, 0.15)",
-                        color: "var(--primary)"
+                        background: "rgba(251, 113, 133, 0.12)",
+                        color: "var(--danger)"
                       }}>
                         {t.category}
                       </span>
                     </td>
                     <td>{t.description || "—"}</td>
-                    <td style={{ color: "white", fontWeight: "700" }}>
+                    <td style={{ color: "var(--danger)", fontWeight: "700" }}>
                       - ₹{t.amount.toLocaleString()}
                     </td>
                     <td style={{ textAlign: "right" }}>
                       <button 
-                        onClick={() => handleDeleteExpense(t.id)}
+                        onClick={() => setDeleteTarget(t)}
                         style={{ background: "transparent", border: "none", color: "var(--text-dim)", cursor: "pointer", transition: "var(--transition-smooth)" }}
                         onMouseEnter={(e) => e.currentTarget.style.color = "var(--danger)"}
                         onMouseLeave={(e) => e.currentTarget.style.color = "var(--text-dim)"}
@@ -222,6 +229,16 @@ export default function Expenses({ token, onAddExpense, dataVersion, triggerRefr
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        title="Remove expense?"
+        message={deleteTarget ? `This will delete ${deleteTarget.category} expense of ₹${Number(deleteTarget.amount).toLocaleString()}. Your dashboard and heatmap will update after removal.` : ""}
+        confirmLabel="Remove expense"
+        loading={deleteLoading}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={handleDeleteExpense}
+      />
     </div>
   );
 }
