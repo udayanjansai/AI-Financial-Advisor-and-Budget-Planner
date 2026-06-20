@@ -26,11 +26,82 @@ import Chatbot from "./components/Chatbot";
 import OCRScanner from "./components/OCRScanner";
 import RecurringExpenses from "./components/RecurringExpenses";
 
+// A premium 6-digit OTP verification component
+function OtpInput({ value, onChange }) {
+  const digits = value.split("");
+  const otpArray = Array(6).fill("").map((_, i) => digits[i] || "");
+
+  const handleInput = (index, val) => {
+    const clean = val.replace(/\D/g, "");
+    if (!clean) {
+      const newArr = [...otpArray];
+      newArr[index] = "";
+      onChange(newArr.join(""));
+      return;
+    }
+    const char = clean.slice(-1);
+    const newArr = [...otpArray];
+    newArr[index] = char;
+    onChange(newArr.join(""));
+
+    // Auto-focus next input
+    if (index < 5 && char) {
+      const nextEl = document.getElementById(`otp-digit-${index + 1}`);
+      if (nextEl) nextEl.focus();
+    }
+  };
+
+  const handleKeyDown = (index, e) => {
+    if (e.key === "Backspace") {
+      const newArr = [...otpArray];
+      if (!newArr[index] && index > 0) {
+        newArr[index - 1] = "";
+        onChange(newArr.join(""));
+        const prevEl = document.getElementById(`otp-digit-${index - 1}`);
+        if (prevEl) prevEl.focus();
+      } else {
+        newArr[index] = "";
+        onChange(newArr.join(""));
+      }
+    }
+  };
+
+  const handlePaste = (e) => {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+    if (pasted.length > 0) {
+      onChange(pasted);
+      const focusIndex = Math.min(pasted.length - 1, 5);
+      const nextEl = document.getElementById(`otp-digit-${focusIndex}`);
+      if (nextEl) nextEl.focus();
+    }
+  };
+
+  return (
+    <div className="otp-digits-container">
+      {otpArray.map((digit, idx) => (
+        <input
+          key={idx}
+          id={`otp-digit-${idx}`}
+          type="text"
+          maxLength={1}
+          value={digit}
+          onChange={(e) => handleInput(idx, e.target.value)}
+          onKeyDown={(e) => handleKeyDown(idx, e)}
+          onPaste={handlePaste}
+          className="otp-digit-field"
+          required
+        />
+      ))}
+    </div>
+  );
+}
+
 export default function App() {
   const googleAuthEnabled = import.meta.env.VITE_ENABLE_GOOGLE_AUTH === "true";
   const usernamePattern = "^[A-Za-z][A-Za-z0-9_]{2,29}$";
   const passwordPattern = "^(?=.*[A-Za-z])(?=.*\\d).{8,}$";
-  const emailPattern = "^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)+$";
+  const emailPattern = "^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$";
   const registrationRules = {
     username: "Username must start with a letter and use 3-30 letters, numbers, or underscores only.",
     password: "Password must be at least 8 characters and include both letters and numbers.",
@@ -59,8 +130,17 @@ export default function App() {
   const [authError, setAuthError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
+  // New OTP / 2FA / Forgot Password States
+  const [otp, setOtp] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpLoading, setOtpLoading] = useState(false);
+  const [otpSuccessMessage, setOtpSuccessMessage] = useState("");
+  const [loginOtpRequired, setLoginOtpRequired] = useState(false);
+  const [loginOtpEmail, setLoginOtpEmail] = useState("");
+  const [isForgotPasswordView, setIsForgotPasswordView] = useState(false);
+
   // Settings State
-  const [settings, setSettings] = useState({ email_reports_enabled: true, alert_threshold: 0.90 });
+  const [settings, setSettings] = useState({ email_reports_enabled: true, alert_threshold: 0.90, two_factor_enabled: true });
   const [settingsSaved, setSettingsSaved] = useState(false);
 
   // Global expense alert state
@@ -69,6 +149,17 @@ export default function App() {
   // Global data version state for real-time dashboard / component refreshes
   const [dataVersion, setDataVersion] = useState(0);
   const triggerRefresh = () => setDataVersion(v => v + 1);
+
+  const resetAuthState = () => {
+    setAuthError("");
+    setOtp("");
+    setOtpSent(false);
+    setOtpLoading(false);
+    setOtpSuccessMessage("");
+    setLoginOtpRequired(false);
+    setLoginOtpEmail("");
+    setIsForgotPasswordView(false);
+  };
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -124,10 +215,143 @@ export default function App() {
     }
   };
 
+  const handleRequestRegisterOtp = async () => {
+    setAuthError("");
+    setOtpSuccessMessage("");
+    if (!email || !new RegExp(emailPattern).test(email)) {
+      setAuthError("Please enter a valid email address first.");
+      return;
+    }
+    setOtpLoading(true);
+    try {
+      const res = await fetch("/api/auth/request-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setOtpSent(true);
+        setOtpSuccessMessage("OTP sent successfully to your email!");
+      } else {
+        setAuthError(data.detail || "Failed to send OTP");
+      }
+    } catch (err) {
+      setAuthError("Could not connect to server");
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  const handleVerifyLoginOtp = async (e) => {
+    e.preventDefault();
+    setAuthError("");
+    try {
+      const res = await fetch("/api/auth/verify-login-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, otp })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        localStorage.setItem("token", data.access_token);
+        setToken(data.access_token);
+        resetAuthState();
+        setUsername("");
+        setPassword("");
+        setEmail("");
+      } else {
+        setAuthError(data.detail || "Verification failed");
+      }
+    } catch (err) {
+      setAuthError("Could not connect to verification server");
+    }
+  };
+
+  const handleForgotPasswordRequest = async (e) => {
+    e.preventDefault();
+    setAuthError("");
+    setOtpSuccessMessage("");
+    setOtpLoading(true);
+    try {
+      const res = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setOtpSent(true);
+        setOtpSuccessMessage("Password reset OTP sent to your email!");
+      } else {
+        setAuthError(data.detail || "Failed to request password reset OTP");
+      }
+    } catch (err) {
+      setAuthError("Could not connect to server");
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  const handleResetPasswordSubmit = async (e) => {
+    e.preventDefault();
+    setAuthError("");
+    setOtpSuccessMessage("");
+    try {
+      const res = await fetch("/api/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, otp, new_password: password })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setIsForgotPasswordView(false);
+        setIsLoginView(true);
+        setOtpSent(false);
+        setOtp("");
+        setPassword("");
+        setOtpSuccessMessage("Password reset successfully! Please sign in with your new password.");
+      } else {
+        setAuthError(data.detail || "Failed to reset password");
+      }
+    } catch (err) {
+      setAuthError("Could not connect to server");
+    }
+  };
+
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setAuthError("");
-    if (!isLoginView) {
+    setOtpSuccessMessage("");
+    
+    if (isLoginView) {
+      try {
+        const res = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          if (data.status === "otp_required") {
+            setLoginOtpRequired(true);
+            setLoginOtpEmail(data.email);
+            setOtpSuccessMessage("Verification code sent to your email!");
+          } else {
+            localStorage.setItem("token", data.access_token);
+            setToken(data.access_token);
+            setUsername("");
+            setPassword("");
+            setEmail("");
+          }
+        } else {
+          setAuthError(data.detail || "Incorrect username or password");
+        }
+      } catch (err) {
+        setAuthError("Could not connect to authentication server");
+      }
+    } else {
+      // Registration Flow
       if (!new RegExp(usernamePattern).test(username)) {
         setAuthError(registrationRules.username);
         return;
@@ -140,31 +364,35 @@ export default function App() {
         setAuthError(registrationRules.email);
         return;
       }
-    }
-    const endpoint = isLoginView ? "/api/auth/login" : "/api/auth/register";
-    const body = isLoginView 
-      ? { username, password } 
-      : { username, password, email };
-
-    try {
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body)
-      });
-      
-      const data = await res.json();
-      if (res.ok) {
-        localStorage.setItem("token", data.access_token);
-        setToken(data.access_token);
-        setUsername("");
-        setPassword("");
-        setEmail("");
-      } else {
-        setAuthError(data.detail || "Authentication failed");
+      if (!otpSent) {
+        setAuthError("Please request and enter the OTP sent to your email to complete registration.");
+        return;
       }
-    } catch (err) {
-      setAuthError("Could not connect to authentication server");
+      if (!otp || otp.length !== 6) {
+        setAuthError("Please enter the 6-digit OTP code.");
+        return;
+      }
+      
+      try {
+        const res = await fetch("/api/auth/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password, email, otp })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          localStorage.setItem("token", data.access_token);
+          setToken(data.access_token);
+          resetAuthState();
+          setUsername("");
+          setPassword("");
+          setEmail("");
+        } else {
+          setAuthError(data.detail || "Registration failed");
+        }
+      } catch (err) {
+        setAuthError("Could not connect to authentication server");
+      }
     }
   };
 
@@ -178,6 +406,7 @@ export default function App() {
     setToken("");
     setUser(null);
     setActiveTab("dashboard");
+    resetAuthState();
   };
 
   const handleSaveSettings = async (e) => {
@@ -212,9 +441,178 @@ export default function App() {
   };
 
   const currentPage = pageMeta[activeTab] || pageMeta.dashboard;
-
   // Auth View Render
   if (!token || !user) {
+    if (loginOtpRequired) {
+      return (
+        <div className="auth-wrapper">
+          <div className="glass-card auth-card">
+            <div className="auth-header">
+              <div style={{ display: "inline-flex", width: "48px", height: "48px", borderRadius: "14px", background: "linear-gradient(135deg, var(--primary), #a855f7)", alignItems: "center", justifyContent: "center", color: "white", fontWeight: "bold", fontSize: "22px", boxShadow: "0 0 20px rgba(99, 102, 241, 0.4)", marginBottom: "16px" }}>
+                🔑
+              </div>
+              <h1 style={{ color: "white", fontSize: "24px" }}>2FA Verification</h1>
+              <p style={{ color: "var(--text-muted)", fontSize: "14px", marginTop: "4px" }}>
+                A login verification code was sent to <strong style={{ color: "white" }}>{loginOtpEmail}</strong>
+              </p>
+            </div>
+
+            <form onSubmit={handleVerifyLoginOtp}>
+              <div className="form-group">
+                <label>Enter 6-Digit OTP</label>
+                <OtpInput value={otp} onChange={setOtp} />
+              </div>
+
+              {otpSuccessMessage && (
+                <div style={{ color: "var(--success)", fontSize: "14px", margin: "10px 0", textAlign: "center" }}>
+                  {otpSuccessMessage}
+                </div>
+              )}
+
+              {authError && (
+                <div style={{ color: "var(--danger)", fontSize: "14px", margin: "10px 0", textAlign: "center" }}>
+                  {authError}
+                </div>
+              )}
+
+              <button type="submit" className="btn" style={{ width: "100%", marginTop: "14px" }}>
+                Verify & Login
+              </button>
+
+              <button 
+                type="button" 
+                className="btn btn-secondary" 
+                style={{ width: "100%", marginTop: "10px", background: "rgba(255,255,255,0.05)", color: "var(--text-muted)", border: "1px solid rgba(255,255,255,0.08)" }}
+                onClick={resetAuthState}
+              >
+                Back to Login
+              </button>
+            </form>
+          </div>
+        </div>
+      );
+    }
+
+    if (isForgotPasswordView) {
+      return (
+        <div className="auth-wrapper">
+          <div className="glass-card auth-card">
+            <div className="auth-header">
+              <div style={{ display: "inline-flex", width: "48px", height: "48px", borderRadius: "14px", background: "linear-gradient(135deg, var(--primary), #a855f7)", alignItems: "center", justifyContent: "center", color: "white", fontWeight: "bold", fontSize: "22px", boxShadow: "0 0 20px rgba(99, 102, 241, 0.4)", marginBottom: "16px" }}>
+                🔒
+              </div>
+              <h1 style={{ color: "white", fontSize: "24px" }}>Reset Password</h1>
+              <p style={{ color: "var(--text-muted)", fontSize: "14px", marginTop: "4px" }}>
+                {!otpSent ? "Enter your email to request a reset code" : "Verify the OTP and set your new password"}
+              </p>
+            </div>
+
+            {!otpSent ? (
+              <form onSubmit={handleForgotPasswordRequest}>
+                <div className="form-group">
+                  <label>Email Address</label>
+                  <input 
+                    type="email" 
+                    className="form-control" 
+                    placeholder="e.g. bob@example.com" 
+                    value={email} 
+                    onChange={(e) => setEmail(e.target.value)} 
+                    required 
+                  />
+                </div>
+
+                {authError && (
+                  <div style={{ color: "var(--danger)", fontSize: "14px", margin: "10px 0", textAlign: "center" }}>
+                    {authError}
+                  </div>
+                )}
+
+                <button type="submit" className="btn" style={{ width: "100%", marginTop: "14px" }} disabled={otpLoading}>
+                  {otpLoading ? "Sending OTP..." : "Send Reset OTP"}
+                </button>
+
+                <button 
+                  type="button" 
+                  className="btn btn-secondary" 
+                  style={{ width: "100%", marginTop: "10px", background: "rgba(255,255,255,0.05)", color: "var(--text-muted)", border: "1px solid rgba(255,255,255,0.08)" }}
+                  onClick={resetAuthState}
+                >
+                  Back to Login
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleResetPasswordSubmit}>
+                <div style={{ background: "rgba(20, 184, 166, 0.05)", border: "1px solid rgba(20, 184, 166, 0.15)", borderRadius: "8px", padding: "10px", marginBottom: "16px", fontSize: "13px", color: "var(--text-muted)", textAlign: "center" }}>
+                  Reset OTP sent to <strong style={{ color: "white" }}>{email}</strong>
+                </div>
+
+                <div className="form-group">
+                  <label>Enter 6-Digit OTP</label>
+                  <OtpInput value={otp} onChange={setOtp} />
+                </div>
+
+                <div className="form-group">
+                  <label>New Password</label>
+                  <div style={{ position: "relative" }}>
+                    <input 
+                      type={showPassword ? "text" : "password"} 
+                      className="form-control" 
+                      style={{ width: "100%", paddingRight: "44px" }}
+                      placeholder="Min 8 chars, 1 letter, 1 number" 
+                      value={password} 
+                      onChange={(e) => setPassword(e.target.value)} 
+                      pattern={passwordPattern}
+                      title={registrationRules.password}
+                      required 
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      style={{
+                        position: "absolute",
+                        right: "12px",
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        background: "none",
+                        border: "none",
+                        color: "var(--text-muted)",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        padding: "4px"
+                      }}
+                    >
+                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+                </div>
+
+                {authError && (
+                  <div style={{ color: "var(--danger)", fontSize: "14px", margin: "10px 0", textAlign: "center" }}>
+                    {authError}
+                  </div>
+                )}
+
+                <button type="submit" className="btn" style={{ width: "100%", marginTop: "14px" }}>
+                  Reset Password
+                </button>
+
+                <button 
+                  type="button" 
+                  className="btn btn-secondary" 
+                  style={{ width: "100%", marginTop: "10px", background: "rgba(255,255,255,0.05)", color: "var(--text-muted)", border: "1px solid rgba(255,255,255,0.08)" }}
+                  onClick={resetAuthState}
+                >
+                  Cancel
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="auth-wrapper">
         <div className="glass-card auth-card">
@@ -227,6 +625,12 @@ export default function App() {
               {isLoginView ? "Sign in to access your budget planner" : "Create an account to get started"}
             </p>
           </div>
+
+          {otpSuccessMessage && (
+            <div style={{ color: "var(--success)", fontSize: "14px", margin: "10px 0", textAlign: "center" }}>
+              {otpSuccessMessage}
+            </div>
+          )}
 
           <form onSubmit={handleAuthSubmit}>
             <div className="form-group">
@@ -253,16 +657,35 @@ export default function App() {
             {!isLoginView && (
               <div className="form-group">
                 <label>Email Address</label>
-                <input 
-                  type="email" 
-                  className="form-control" 
-                  placeholder="e.g. bob@example.com" 
-                  value={email} 
-                  onChange={(e) => setEmail(e.target.value)} 
-                  pattern={emailPattern}
-                  title={registrationRules.email}
-                  required 
-                />
+                <div style={{ display: "flex", gap: "10px", alignItems: "flex-end" }}>
+                  <input 
+                    type="email" 
+                    className="form-control" 
+                    placeholder="e.g. bob@example.com" 
+                    value={email} 
+                    onChange={(e) => setEmail(e.target.value)} 
+                    pattern={emailPattern}
+                    title={registrationRules.email}
+                    required 
+                    style={{ flex: 1 }}
+                  />
+                  <button 
+                    type="button" 
+                    className="btn" 
+                    style={{ height: "42px", whiteSpace: "nowrap", padding: "0 16px", minWidth: "110px", fontSize: "13px" }}
+                    onClick={handleRequestRegisterOtp} 
+                    disabled={otpLoading}
+                  >
+                    {otpLoading ? "Sending..." : otpSent ? "Resend OTP" : "Send OTP"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {!isLoginView && otpSent && (
+              <div className="form-group">
+                <label>Enter Registration OTP</label>
+                <OtpInput value={otp} onChange={setOtp} />
               </div>
             )}
 
@@ -307,6 +730,13 @@ export default function App() {
                   Use at least 8 characters with one letter and one number.
                 </small>
               )}
+              {isLoginView && (
+                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "6px" }}>
+                  <span className="auth-link" style={{ fontSize: "12px", color: "var(--primary)" }} onClick={() => { resetAuthState(); setIsForgotPasswordView(true); }}>
+                    Forgot Password?
+                  </span>
+                </div>
+              )}
             </div>
 
             {authError && (
@@ -344,14 +774,14 @@ export default function App() {
             {isLoginView ? (
               <span>
                 Don't have an account?{" "}
-                <span className="auth-link" onClick={() => { setIsLoginView(false); setAuthError(""); setShowPassword(false); }}>
+                <span className="auth-link" onClick={() => { resetAuthState(); setIsLoginView(false); }}>
                   Register here
                 </span>
               </span>
             ) : (
               <span>
                 Already have an account?{" "}
-                <span className="auth-link" onClick={() => { setIsLoginView(true); setAuthError(""); setShowPassword(false); }}>
+                <span className="auth-link" onClick={() => { resetAuthState(); setIsLoginView(true); }}>
                   Log in here
                 </span>
               </span>
@@ -384,6 +814,19 @@ export default function App() {
               style={{ width: "20px", height: "20px", cursor: "pointer" }} 
               checked={settings.email_reports_enabled}
               onChange={(e) => setSettings(prev => ({ ...prev, email_reports_enabled: e.target.checked }))}
+            />
+          </div>
+
+          <div className="form-group" style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid rgba(255,255,255,0.05)", paddingBottom: "16px", marginTop: "16px" }}>
+            <div>
+              <label style={{ fontSize: "15px", color: "white", fontWeight: "600" }}>Two-Factor Authentication (2FA)</label>
+              <p style={{ fontSize: "12px", color: "var(--text-muted)", marginTop: "2px" }}>Require a one-time verification code sent to your email to log in.</p>
+            </div>
+            <input 
+              type="checkbox" 
+              style={{ width: "20px", height: "20px", cursor: "pointer" }} 
+              checked={settings.two_factor_enabled}
+              onChange={(e) => setSettings(prev => ({ ...prev, two_factor_enabled: e.target.checked }))}
             />
           </div>
 
@@ -424,7 +867,6 @@ export default function App() {
 
   return (
     <div className="app-container">
-      
       {/* Sidebar Navigation */}
       <div className="sidebar">
         <div>

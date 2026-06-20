@@ -6,6 +6,7 @@ class UserRegister(BaseModel):
     username: str = Field(..., min_length=3, max_length=50)
     password: str = Field(..., min_length=6)
     email: str
+    otp: str
 
 class UserLogin(BaseModel):
     username: str
@@ -55,6 +56,7 @@ class BudgetResponse(BudgetCreate):
 class SettingsUpdate(BaseModel):
     email_reports_enabled: bool
     alert_threshold: float = Field(..., gt=0, le=1)
+    two_factor_enabled: bool = True
 
 class SettingsResponse(SettingsUpdate):
     user_id: int
@@ -121,5 +123,28 @@ class GoalChatRequest(BaseModel):
 
 class GoalChatResponse(BaseModel):
     response: str
+
+
+# New OTP and Reset Password schemas
+class OTPRequest(BaseModel):
+    email: str
+
+class LoginResponse(BaseModel):
+    status: str
+    access_token: Optional[str] = None
+    token_type: Optional[str] = None
+    email: Optional[str] = None
+
+class VerifyLoginOTPRequest(BaseModel):
+    username: str
+    otp: str
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+class ResetPasswordRequest(BaseModel):
+    email: str
+    otp: str
+    new_password: str = Field(..., min_length=6)
 
 

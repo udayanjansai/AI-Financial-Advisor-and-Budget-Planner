@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { PlusCircle, Trash2, Edit2, ToggleLeft, ToggleRight, Repeat, ArrowDownRight, Check, X } from "lucide-react";
+import ConfirmDialog from "./ConfirmDialog";
 
 export default function RecurringExpenses({ token, dataVersion, triggerRefresh }) {
   const [items, setItems] = useState([]);
@@ -18,6 +19,8 @@ export default function RecurringExpenses({ token, dataVersion, triggerRefresh }
   const [startDate, setStartDate] = useState(new Date().toISOString().split("T")[0]);
   const [endDate, setEndDate] = useState("");
   const [isActive, setIsActive] = useState(true);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const categories = ["Food", "Transport", "Entertainment", "Shopping", "Utilities", "Medical", "Others"];
   const frequencies = ["Daily", "Weekly", "Monthly", "Yearly"];
@@ -114,19 +117,21 @@ export default function RecurringExpenses({ token, dataVersion, triggerRefresh }
     setIsActive(!!item.is_active);
   };
 
-  const handleDelete = async (id) => {
-    if (!confirm("Are you sure you want to delete this recurring expense?")) return;
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
     setError("");
     setSuccess("");
+    setDeleteLoading(true);
 
     try {
-      const res = await fetch(`/api/recurring-expenses/${id}`, {
+      const res = await fetch(`/api/recurring-expenses/${deleteTarget.id}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${token}` }
       });
 
       if (res.ok) {
         setSuccess("Recurring expense deleted.");
+        setDeleteTarget(null);
         if (triggerRefresh) triggerRefresh();
         else fetchRecurringExpenses();
         
@@ -134,6 +139,8 @@ export default function RecurringExpenses({ token, dataVersion, triggerRefresh }
       }
     } catch (err) {
       setError("Failed to delete recurring expense.");
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -355,7 +362,7 @@ export default function RecurringExpenses({ token, dataVersion, triggerRefresh }
                             <Edit2 size={16} />
                           </button>
                           <button 
-                            onClick={() => handleDelete(item.id)}
+                            onClick={() => setDeleteTarget(item)}
                             style={{ background: "transparent", border: "none", color: "var(--text-dim)", cursor: "pointer", transition: "var(--transition-smooth)" }}
                             onMouseEnter={(e) => e.currentTarget.style.color = "var(--danger)"}
                             onMouseLeave={(e) => e.currentTarget.style.color = "var(--text-dim)"}
@@ -374,6 +381,18 @@ export default function RecurringExpenses({ token, dataVersion, triggerRefresh }
         </div>
 
       </div>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Delete Recurring Expense"
+        message={`Are you sure you want to delete the recurring expense "${deleteTarget?.title}"?`}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        tone="danger"
+        loading={deleteLoading}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

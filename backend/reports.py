@@ -19,12 +19,28 @@ def generate_report_content(user_id: int) -> dict:
     # Calculate health score and financial summary
     health = calculate_financial_health_score(user_id)
     
-    # Fetch user details, category breakdown and budgets
+    # Fetch user details, category breakdown, budgets and monthly sums
     conn = get_db()
     cursor = conn.cursor()
     
     cursor.execute("SELECT username, email FROM users WHERE id = ?", (user_id,))
     user = cursor.fetchone()
+    
+    # Current calendar month income sum
+    cursor.execute(
+        "SELECT SUM(amount) as total FROM income WHERE user_id = ? AND substr(date, 1, 7) = ?",
+        (user_id, current_month_str)
+    )
+    month_income_row = cursor.fetchone()
+    month_income = month_income_row["total"] if month_income_row and month_income_row["total"] is not None else 0.0
+
+    # Current calendar month expenses sum
+    cursor.execute(
+        "SELECT SUM(amount) as total FROM expenses WHERE user_id = ? AND substr(date, 1, 7) = ?",
+        (user_id, current_month_str)
+    )
+    month_expense_row = cursor.fetchone()
+    month_expense = month_expense_row["total"] if month_expense_row and month_expense_row["total"] is not None else 0.0
     
     # Category breakdown
     cursor.execute("""
@@ -49,11 +65,11 @@ def generate_report_content(user_id: int) -> dict:
     username = user["username"] if user else "User"
     email = user["email"] if user else "no-reply@finance.com"
     
-    savings = max(0.0, health["total_income"] - health["total_expense"])
+    savings = max(0.0, month_income - month_expense)
     
     # Compile Alerts
     alerts = []
-    if health["total_expense"] > health["total_income"]:
+    if month_expense > month_income:
         alerts.append("Warning: Your total expenses this month have exceeded your total income! Consider cutting back on discretionary spending.")
     for cat_row in categories:
         cat_name = cat_row["category"]
@@ -127,11 +143,11 @@ def generate_report_content(user_id: int) -> dict:
           </tr>
           <tr>
             <td style="padding: 10px; border: 1px solid #e5e7eb;"><strong>Income</strong></td>
-            <td style="padding: 10px; border: 1px solid #e5e7eb; text-align: right; color: #10b981;"><strong>₹{health["total_income"]:,.2f}</strong></td>
+            <td style="padding: 10px; border: 1px solid #e5e7eb; text-align: right; color: #10b981;"><strong>₹{month_income:,.2f}</strong></td>
           </tr>
           <tr>
             <td style="padding: 10px; border: 1px solid #e5e7eb;"><strong>Expenses</strong></td>
-            <td style="padding: 10px; border: 1px solid #e5e7eb; text-align: right; color: #ef4444;"><strong>₹{health["total_expense"]:,.2f}</strong></td>
+            <td style="padding: 10px; border: 1px solid #e5e7eb; text-align: right; color: #ef4444;"><strong>₹{month_expense:,.2f}</strong></td>
           </tr>
           <tr style="background-color: #f3f4f6;">
             <td style="padding: 10px; border: 1px solid #e5e7eb;"><strong>Savings</strong></td>
@@ -179,8 +195,8 @@ def generate_report_content(user_id: int) -> dict:
     Here is your personalized AI budget report and financial health assessment.
     {alert_banner_text}
     CASH FLOW SUMMARY:
-    - Income:   ₹{health["total_income"]:,.2f}
-    - Expenses: ₹{health["total_expense"]:,.2f}
+    - Income:   ₹{month_income:,.2f}
+    - Expenses: ₹{month_expense:,.2f}
     - Savings:  ₹{savings:,.2f}
     
     CATEGORY SPENDING BREAKDOWN:
@@ -201,45 +217,89 @@ def generate_report_content(user_id: int) -> dict:
 
 def send_monthly_report_email(user_id: int) -> dict:
     report = generate_report_content(user_id)
+    subject = f"Your Monthly Financial Report - {datetime.now().strftime('%B %Y')}"
+    return send_brevo_email(report["email"], subject, report["html"], report["text"])
+
+
+def send_brevo_email(to_email: str, subject: str, html_body: str, text_body: str) -> dict:
+    import requests
+    brevo_api_key = os.environ.get("BREVO_API_KEY")
+    brevo_sender_email = os.environ.get("BREVO_SENDER_EMAIL")
+    brevo_sender_name = os.environ.get("BREVO_SENDER_NAME", "FinTracker AI")
     
-    # SMTP details (Optionally override via env variables)
-    smtp_host = os.environ.get("SMTP_HOST")
-    smtp_port = os.environ.get("SMTP_PORT", "587")
-    smtp_user = os.environ.get("SMTP_USER")
-    smtp_pass = os.environ.get("SMTP_PASSWORD")
-    
-    if smtp_host and smtp_user and smtp_pass:
+    if brevo_api_key and brevo_sender_email:
+        url = "https://api.brevo.com/v3/smtp/email"
+        headers = {
+            "accept": "application/json",
+            "api-key": brevo_api_key,
+            "content-type": "application/json"
+        }
+        payload = {
+            "sender": {"name": brevo_sender_name, "email": brevo_sender_email},
+            "to": [{"email": to_email}],
+            "subject": subject,
+            "htmlContent": html_body,
+            "textContent": text_body
+        }
         try:
-            msg = MIMEMultipart("alternative")
-            msg["Subject"] = f"Your Monthly Financial Report - {datetime.now().strftime('%B %Y')}"
-            msg["From"] = smtp_user
-            msg["To"] = report["email"]
-            
-            part1 = MIMEText(report["text"], "plain")
-            part2 = MIMEText(report["html"], "html")
-            
-            msg.attach(part1)
-            msg.attach(part2)
-            
-            with smtplib.SMTP(smtp_host, int(smtp_port)) as server:
-                server.starttls()
-                server.login(smtp_user, smtp_pass)
-                server.sendmail(smtp_user, report["email"], msg.as_string())
-                
-            return {"status": "success", "method": "SMTP Email Sent", "to": report["email"]}
+            response = requests.post(url, headers=headers, json=payload, timeout=10)
+            print(f"\n--- [BREVO API RESPONSE] STATUS: {response.status_code} | RESPONSE: {response.text} ---\n")
+            if response.status_code in [200, 201, 202]:
+                return {"status": "success", "method": "Brevo HTTP API Sent", "to": to_email}
+            else:
+                print(f"Brevo API failed: {response.status_code} - {response.text}")
         except Exception as e:
-            # Fall back to logging on error
-            pass
+            print(f"Brevo API request failed: {str(e)}")
             
-    # Mock fallback writing to folder
+    # Fallback to local mock files
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filepath = os.path.join(MOCK_EMAIL_DIR, f"report_{user_id}_{timestamp}.html")
+    filepath = os.path.join(MOCK_EMAIL_DIR, f"otp_{to_email}_{timestamp}.html")
     with open(filepath, "w", encoding="utf-8") as f:
-        f.write(report["html"])
+        f.write(html_body)
         
     return {
         "status": "success", 
         "method": f"Mock Saved to Local Directory: {os.path.basename(filepath)}", 
-        "to": report["email"],
+        "to": to_email,
         "filepath": filepath
     }
+
+
+def send_otp_notification(email: str, otp: str, purpose: str) -> dict:
+    if purpose == "register":
+        subject = "FinTracker AI - Registration OTP"
+        headline = "Complete Your Registration"
+        body_text = "Thank you for choosing FinTracker AI. Use the following One-Time Password (OTP) to complete your registration:"
+    elif purpose == "login":
+        subject = "FinTracker AI - Login Verification Code"
+        headline = "Two-Factor Authentication Login"
+        body_text = "A login attempt was made for your FinTracker AI account. Use the following One-Time Password (OTP) to complete your login:"
+    elif purpose == "reset":
+        subject = "FinTracker AI - Password Reset Request"
+        headline = "Reset Your Password"
+        body_text = "A password reset request was made for your FinTracker AI account. Use the following One-Time Password (OTP) to complete your password reset:"
+    else:
+        subject = "FinTracker AI Code"
+        headline = "One-Time Password Code"
+        body_text = "Here is your requested One-Time Password (OTP) code:"
+
+    html_content = f"""
+    <html>
+      <body style="font-family: Arial, sans-serif; color: #333; line-height: 1.6; max-width: 500px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px;">
+        <h2 style="color: #4f46e5; text-align: center; border-bottom: 2px solid #eeebff; padding-bottom: 15px;">{headline}</h2>
+        <p>Hello,</p>
+        <p>{body_text}</p>
+        <div style="background-color: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 6px; padding: 15px; margin: 20px 0; text-align: center;">
+          <span style="font-size: 32px; font-weight: bold; color: #4f46e5; letter-spacing: 5px;">{otp}</span>
+        </div>
+        <p style="font-size: 14px; color: #6b7280;">This OTP is valid for 10 minutes. If you did not request this code, please ignore this email.</p>
+        <p style="font-size: 12px; color: #6b7280; text-align: center; margin-top: 30px; border-top: 1px solid #e5e7eb; padding-top: 15px;">
+          Sent by FinTracker AI Financial Advisor.
+        </p>
+      </body>
+    </html>
+    """
+    text_content = f"{headline} - {body_text} {otp}. Valid for 10 minutes."
+    
+    return send_brevo_email(email, subject, html_content, text_content)
+

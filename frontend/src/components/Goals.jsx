@@ -423,7 +423,7 @@ export default function Goals({ token, dataVersion, triggerRefresh }) {
                       </button>
                       
                       <button 
-                        onClick={() => handleDeleteGoal(g.id)}
+                        onClick={() => setDeleteTarget(g)}
                         style={{ 
                           background: "rgba(255, 255, 255, 0.04)", 
                           border: "none", 
@@ -765,6 +765,18 @@ export default function Goals({ token, dataVersion, triggerRefresh }) {
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        title="Delete Saving Goal"
+        message={`Are you sure you want to delete the goal "${deleteTarget?.name}"? All progress data will be permanently removed.`}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        tone="danger"
+        loading={deleteLoading}
+        onConfirm={handleDeleteGoal}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

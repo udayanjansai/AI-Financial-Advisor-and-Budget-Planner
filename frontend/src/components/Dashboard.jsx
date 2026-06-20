@@ -20,8 +20,11 @@ import {
   Brain,
   Calendar,
   Save,
-  Plus
+  Plus,
+  Mail
 } from "lucide-react";
+
+import AlertDialog from "./AlertDialog";
 
 // Register ChartJS modules
 ChartJS.register(
@@ -44,6 +47,8 @@ export default function Dashboard({ token, activeAlert, dataVersion }) {
   const [personality, setPersonality] = useState(null);
   const [personalityLoading, setPersonalityLoading] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [emailLoading, setEmailLoading] = useState(false);
+  const [alertState, setAlertState] = useState({ open: false, title: "", message: "", tone: "success" });
   
   // Modal for heatmap details
   const [selectedDate, setSelectedDate] = useState(null);
@@ -276,11 +281,60 @@ export default function Dashboard({ token, activeAlert, dataVersion }) {
         document.body.removeChild(a);
         window.URL.revokeObjectURL(url);
       } else {
-        alert("Failed to generate report download.");
+        setAlertState({
+          open: true,
+          title: "Download Failed",
+          message: "Failed to generate report download on the server.",
+          tone: "danger"
+        });
       }
     } catch (err) {
       console.error(err);
-      alert("Error downloading report.");
+      setAlertState({
+        open: true,
+        title: "Download Error",
+        message: "An unexpected error occurred while downloading the report.",
+        tone: "danger"
+      });
+    }
+  };
+
+  const triggerEmailReport = async () => {
+    setEmailLoading(true);
+    try {
+      const res = await fetch("/api/reports/send-email", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setAlertState({
+          open: true,
+          title: "Report Emailed",
+          message: data.message || "Your financial summary report has been sent to your email inbox.",
+          tone: "success"
+        });
+      } else {
+        setAlertState({
+          open: true,
+          title: "Email Dispatch Failed",
+          message: data.detail || "Failed to email report. Please check your Brevo API key configuration.",
+          tone: "danger"
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      setAlertState({
+        open: true,
+        title: "Network Error",
+        message: "Could not establish a connection to the server to send the report.",
+        tone: "danger"
+      });
+    } finally {
+      setEmailLoading(false);
     }
   };
 
@@ -529,6 +583,15 @@ export default function Dashboard({ token, activeAlert, dataVersion }) {
           <p style={{ color: "var(--text-muted)", marginTop: "4px" }}>Welcome back! Here's your financial overview.</p>
         </div>
         <div style={{ display: "flex", gap: "12px" }}>
+          <button 
+            className="btn btn-secondary" 
+            style={{ display: "flex", alignItems: "center", gap: "8px" }}
+            onClick={triggerEmailReport} 
+            disabled={emailLoading}
+          >
+            <Mail size={16} />
+            {emailLoading ? "Sending..." : "Email Report"}
+          </button>
           <button className="btn btn-secondary" onClick={triggerDownloadReport}>
             Download Report
           </button>
@@ -916,6 +979,14 @@ export default function Dashboard({ token, activeAlert, dataVersion }) {
         </div>
       )}
 
+      {/* Custom Alert Dialog */}
+      <AlertDialog 
+        open={alertState.open} 
+        title={alertState.title} 
+        message={alertState.message} 
+        tone={alertState.tone} 
+        onClose={() => setAlertState(prev => ({ ...prev, open: false }))} 
+      />
     </div>
   );
 }

@@ -10,6 +10,7 @@ import database
 import auth
 import ai_features
 import reports
+import main
 
 # Use a test database file
 TEST_DB = os.path.join(os.path.dirname(__file__), "test_finance.db")
@@ -207,4 +208,220 @@ def test_download_report():
     assert "Monthly Financial Summary" in report_data["html"]
     assert "Category spending breakdown" in report_data["html"]
     assert "frank@example.com" in report_data["html"] or "frank" in report_data["html"]
+
+
+def test_otp_generation_and_consumption(setup_test_db):
+    email = "test-otp@example.com"
+    otp = "123456"
+    main.save_pending_otp(email, otp, "register")
+    
+    assert main.verify_and_consume_otp(email, otp, "register")
+    assert not main.verify_and_consume_otp(email, otp, "register")
+
+
+def test_registration_with_otp(setup_test_db):
+    from fastapi.testclient import TestClient
+    from main import app
+    client = TestClient(app)
+    
+    email = "register-test@example.com"
+    # Try registering without sending OTP
+    response = client.post("/api/auth/register", json={
+        "username": "otp_user",
+        "password": "Password1",
+        "email": email,
+        "otp": "000000"
+    })
+    assert response.status_code == 400
+    
+    # Request OTP
+    response = client.post("/api/auth/request-otp", json={"email": email})
+    assert response.status_code == 200
+    
+    # Fetch from db to bypass email delivery check
+    conn = database.get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT otp FROM pending_otps WHERE email = ? AND otp_type = ?", (email, "register"))
+    row = cursor.fetchone()
+    conn.close()
+    assert row is not None
+    otp = row["otp"]
+    
+    # Register with correct OTP
+    response = client.post("/api/auth/register", json={
+        "username": "otp_user2",
+        "password": "Password12",
+        "email": email,
+        "otp": otp
+    })
+    assert response.status_code == 201
+    assert "access_token" in response.json()
+
+
+def test_login_2fa_otp_flow(setup_test_db):
+    from fastapi.testclient import TestClient
+    from main import app
+    client = TestClient(app)
+    
+    conn = database.get_db()
+    cursor = conn.cursor()
+    hashed_pwd = auth.get_password_hash("Password12")
+    cursor.execute("INSERT INTO users (username, password_hash, email) VALUES (?, ?, ?)", ("login_user", hashed_pwd, "login-test@example.com"))
+    conn.commit()
+    conn.close()
+    
+    # Try standard login
+    response = client.post("/api/auth/login", json={
+        "username": "login_user",
+        "password": "Password12"
+    })
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "otp_required"
+    email = data["email"]
+    
+    # Get OTP from DB
+    conn = database.get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT otp FROM pending_otps WHERE email = ? AND otp_type = ?", (email, "login"))
+    row = cursor.fetchone()
+    conn.close()
+    assert row is not None
+    otp = row["otp"]
+    
+    # Verify login OTP
+    response = client.post("/api/auth/verify-login-otp", json={
+        "username": "login_user",
+        "otp": otp
+    })
+    assert response.status_code == 200
+    assert "access_token" in response.json()
+
+
+def test_forgot_reset_password_flow(setup_test_db):
+    from fastapi.testclient import TestClient
+    from main import app
+    client = TestClient(app)
+    
+    email = "reset-test@example.com"
+    conn = database.get_db()
+    cursor = conn.cursor()
+    hashed_pwd = auth.get_password_hash("OldPassword1")
+    cursor.execute("INSERT INTO users (username, password_hash, email) VALUES (?, ?, ?)", ("reset_user", hashed_pwd, email))
+    conn.commit()
+    conn.close()
+    
+    # Request forgot password OTP
+    response = client.post("/api/auth/forgot-password", json={"email": email})
+    assert response.status_code == 200
+    
+    # Get OTP from DB
+    conn = database.get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT otp FROM pending_otps WHERE email = ? AND otp_type = ?", (email, "reset"))
+    row = cursor.fetchone()
+    conn.close()
+    otp = row["otp"]
+    
+    # Reset password with wrong OTP
+    response = client.post("/api/auth/reset-password", json={
+        "email": email,
+        "otp": "000000",
+        "new_password": "NewPassword2"
+    })
+    assert response.status_code == 400
+    
+    # Reset password with correct OTP
+    response = client.post("/api/auth/reset-password", json={
+        "email": email,
+        "otp": otp,
+        "new_password": "NewPassword2"
+    })
+    assert response.status_code == 200
+    
+    # Verify login works with new password
+    response = client.post("/api/auth/login", json={
+        "username": "reset_user",
+        "password": "NewPassword2"
+    })
+    assert response.status_code == 200
+    assert response.json()["status"] == "otp_required"
+
+
+def test_login_bypass_2fa(setup_test_db):
+    from fastapi.testclient import TestClient
+    from main import app
+    client = TestClient(app)
+    
+    email = "bypass-test@example.com"
+    conn = database.get_db()
+    cursor = conn.cursor()
+    hashed_pwd = auth.get_password_hash("Password123")
+    cursor.execute("INSERT INTO users (username, password_hash, email) VALUES (?, ?, ?)", ("bypass_user", hashed_pwd, email))
+    user_id = cursor.lastrowid
+    
+    # Insert settings with two_factor_enabled = 0 (disabled)
+    cursor.execute("INSERT INTO settings (user_id, email_reports_enabled, alert_threshold, two_factor_enabled) VALUES (?, 1, 0.90, 0)", (user_id,))
+    conn.commit()
+    conn.close()
+    
+    # Log in - should bypass OTP and return token directly
+    response = client.post("/api/auth/login", json={
+        "username": "bypass_user",
+        "password": "Password123"
+    })
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert "access_token" in data
+    
+    token = data["access_token"]
+    
+    # Turn 2FA back on using settings endpoint
+    headers = {"Authorization": f"Bearer {token}"}
+    response = client.put("/api/settings", json={
+        "email_reports_enabled": True,
+        "alert_threshold": 0.85,
+        "two_factor_enabled": True
+    }, headers=headers)
+    assert response.status_code == 200
+    assert response.json()["two_factor_enabled"] is True
+    
+    # Log in again - should now require OTP
+    response = client.post("/api/auth/login", json={
+        "username": "bypass_user",
+        "password": "Password123"
+    })
+    assert response.status_code == 200
+    assert response.json()["status"] == "otp_required"
+
+
+def test_manual_report_email_endpoint(setup_test_db):
+    from fastapi.testclient import TestClient
+    from main import app
+    client = TestClient(app)
+    
+    email = "email-report-test@example.com"
+    conn = database.get_db()
+    cursor = conn.cursor()
+    hashed_pwd = auth.get_password_hash("Password123")
+    cursor.execute("INSERT INTO users (username, password_hash, email) VALUES (?, ?, ?)", ("report_user", hashed_pwd, email))
+    user_id = cursor.lastrowid
+    
+    cursor.execute("INSERT INTO settings (user_id, email_reports_enabled, alert_threshold, two_factor_enabled) VALUES (?, 1, 0.90, 0)", (user_id,))
+    conn.commit()
+    conn.close()
+    
+    response = client.post("/api/auth/login", json={
+        "username": "report_user",
+        "password": "Password123"
+    })
+    assert response.status_code == 200
+    token = response.json()["access_token"]
+    
+    headers = {"Authorization": f"Bearer {token}"}
+    response = client.post("/api/reports/send-email", headers=headers)
+    assert response.status_code == 200
+    assert "Report emailed successfully!" in response.json()["message"]
+
 

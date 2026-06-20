@@ -146,11 +146,109 @@ def get_duplicate_registration_message(error: Exception) -> str:
 def startup_event():
     init_db()
 
+# --- AUTH HELPERS ---
+
+def save_pending_otp(email: str, otp: str, otp_type: str):
+    conn = get_db()
+    cursor = conn.cursor()
+    expires_at = (datetime.now() + timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        # Check if exists to do update, or insert new
+        cursor.execute(
+            "SELECT id FROM pending_otps WHERE email = ? AND otp_type = ?",
+            (email, otp_type)
+        )
+        existing = cursor.fetchone()
+        if existing:
+            cursor.execute(
+                "UPDATE pending_otps SET otp = ?, expires_at = ? WHERE id = ?",
+                (otp, expires_at, existing["id"])
+            )
+        else:
+            cursor.execute(
+                "INSERT INTO pending_otps (email, otp, otp_type, expires_at) VALUES (?, ?, ?, ?)",
+                (email, otp, otp_type, expires_at)
+            )
+        conn.commit()
+    except DatabaseError as e:
+        conn.close()
+        raise HTTPException(status_code=500, detail=f"Database error saving OTP: {str(e)}")
+    conn.close()
+
+def verify_and_consume_otp(email: str, otp: str, otp_type: str) -> bool:
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id, expires_at FROM pending_otps WHERE email = ? AND otp = ? AND otp_type = ?",
+        (email, otp, otp_type)
+    )
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return False
+        
+    expires_at_str = str(row["expires_at"])
+    if "." in expires_at_str:
+        expires_at_str = expires_at_str.split(".")[0]
+    if expires_at_str.endswith("Z"):
+        expires_at_str = expires_at_str[:-1]
+    expires_at_str = expires_at_str.replace("T", " ")
+    
+    try:
+        expires_at_dt = datetime.strptime(expires_at_str, "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        expires_at_dt = datetime.now() - timedelta(seconds=1)
+        
+    if datetime.now() > expires_at_dt:
+        conn.close()
+        return False
+        
+    # Valid! Consume OTP
+    cursor.execute("DELETE FROM pending_otps WHERE id = ?", (row["id"],))
+    conn.commit()
+    conn.close()
+    return True
+
+
 # --- AUTH ROUTES ---
+
+@app.post("/api/auth/request-otp")
+def request_registration_otp(req: models.OTPRequest):
+    email = req.email.strip().lower()
+    
+    # Check if email is already registered in users
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM users WHERE LOWER(email) = ?", (email,))
+    existing_user = cursor.fetchone()
+    conn.close()
+    
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Email already registered")
+        
+    # Generate 6-digit numeric OTP
+    import random
+    otp = f"{random.randint(100000, 999999)}"
+    
+    print(f"\n--- [OTP VERIFICATION] EMAIL: {email} | OTP: {otp} | TYPE: register ---\n")
+    
+    # Store OTP in database
+    save_pending_otp(email, otp, "register")
+    
+    # Send via Brevo API / Mock file
+    reports.send_otp_notification(email, otp, "register")
+    
+    return {"message": "OTP sent successfully to your email"}
 
 @app.post("/api/auth/register", response_model=models.Token, status_code=status.HTTP_201_CREATED)
 def register(user: models.UserRegister):
     validate_registration_input(user)
+    email = user.email.strip().lower()
+    
+    # Verify OTP
+    if not verify_and_consume_otp(email, user.otp, "register"):
+        raise HTTPException(status_code=400, detail="Invalid or expired OTP")
+        
     conn = get_db()
     cursor = conn.cursor()
     
@@ -165,7 +263,7 @@ def register(user: models.UserRegister):
     try:
         cursor.execute(
             "INSERT INTO users (username, password_hash, email) VALUES (?, ?, ?)",
-            (user.username, hashed_pwd, user.email)
+            (user.username, hashed_pwd, email)
         )
         user_id = get_required_insert_id(
             cursor,
@@ -190,22 +288,147 @@ def register(user: models.UserRegister):
     token = auth.create_access_token({"sub": user.username, "id": user_id})
     return {"access_token": token, "token_type": "bearer"}
 
-@app.post("/api/auth/login", response_model=models.Token)
+@app.post("/api/auth/login", response_model=models.LoginResponse)
 def login(user: models.UserLogin):
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT id, username, password_hash FROM users WHERE username = ?", (user.username,))
+    cursor.execute("SELECT id, username, password_hash, email FROM users WHERE username = ?", (user.username,))
+    db_user = cursor.fetchone()
+    
+    if not db_user or not auth.verify_password(user.password, db_user["password_hash"]):
+        conn.close()
+        raise HTTPException(status_code=401, detail="Incorrect username or password")
+        
+    # Check settings for 2FA preference
+    cursor.execute("SELECT two_factor_enabled FROM settings WHERE user_id = ?", (db_user["id"],))
+    settings_row = cursor.fetchone()
+    
+    two_factor_enabled = True
+    if settings_row:
+        two_factor_enabled = bool(settings_row["two_factor_enabled"])
+    else:
+        # Default is True, let's create settings row if not exists
+        try:
+            cursor.execute("INSERT INTO settings (user_id) VALUES (?)", (db_user["id"],))
+            conn.commit()
+        except Exception:
+            pass
+            
+    conn.close()
+    
+    if not two_factor_enabled:
+        # Process recurring expenses on login success
+        ai_features.process_recurring_expenses(db_user["id"])
+        
+        token = auth.create_access_token({"sub": db_user["username"], "id": db_user["id"]})
+        return {
+            "status": "success",
+            "access_token": token,
+            "token_type": "bearer"
+        }
+        
+    # Generate and send Login OTP (2FA)
+    email = db_user["email"].strip().lower()
+    import random
+    otp = f"{random.randint(100000, 999999)}"
+    
+    print(f"\n--- [OTP VERIFICATION] EMAIL: {email} | OTP: {otp} | TYPE: login ---\n")
+    
+    # Store OTP in DB
+    save_pending_otp(email, otp, "login")
+    
+    # Send via Brevo
+    reports.send_otp_notification(email, otp, "login")
+    
+    return {
+        "status": "otp_required",
+        "email": email
+    }
+
+@app.post("/api/auth/verify-login-otp", response_model=models.Token)
+def verify_login_otp(req: models.VerifyLoginOTPRequest):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, username, email FROM users WHERE username = ?", (req.username,))
     db_user = cursor.fetchone()
     conn.close()
     
-    if not db_user or not auth.verify_password(user.password, db_user["password_hash"]):
-        raise HTTPException(status_code=401, detail="Incorrect username or password")
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
         
-    # Process recurring expenses on login
+    email = db_user["email"].strip().lower()
+    
+    # Verify OTP
+    if not verify_and_consume_otp(email, req.otp, "login"):
+        raise HTTPException(status_code=400, detail="Invalid or expired OTP")
+        
+    # Process recurring expenses on login success
     ai_features.process_recurring_expenses(db_user["id"])
-        
+    
     token = auth.create_access_token({"sub": db_user["username"], "id": db_user["id"]})
     return {"access_token": token, "token_type": "bearer"}
+
+@app.post("/api/auth/forgot-password")
+def forgot_password(req: models.ForgotPasswordRequest):
+    email = req.email.strip().lower()
+    
+    # Check user exists
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM users WHERE LOWER(email) = ?", (email,))
+    db_user = cursor.fetchone()
+    conn.close()
+    
+    if not db_user:
+        raise HTTPException(status_code=404, detail="No account associated with this email")
+        
+    # Generate Reset OTP
+    import random
+    otp = f"{random.randint(100000, 999999)}"
+    
+    print(f"\n--- [OTP VERIFICATION] EMAIL: {email} | OTP: {otp} | TYPE: reset ---\n")
+    
+    # Store OTP
+    save_pending_otp(email, otp, "reset")
+    
+    # Send email
+    reports.send_otp_notification(email, otp, "reset")
+    
+    return {"message": "Password reset OTP sent successfully to your email"}
+
+@app.post("/api/auth/reset-password")
+def reset_password(req: models.ResetPasswordRequest):
+    email = req.email.strip().lower()
+    
+    # Verify OTP
+    if not verify_and_consume_otp(email, req.otp, "reset"):
+        raise HTTPException(status_code=400, detail="Invalid or expired OTP")
+        
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Check if user exists
+    cursor.execute("SELECT id FROM users WHERE LOWER(email) = ?", (email,))
+    db_user = cursor.fetchone()
+    if not db_user:
+        conn.close()
+        raise HTTPException(status_code=404, detail="User account not found")
+        
+    # Hash and update password
+    hashed_pwd = auth.get_password_hash(req.new_password)
+    try:
+        cursor.execute(
+            "UPDATE users SET password_hash = ? WHERE id = ?",
+            (hashed_pwd, db_user["id"])
+        )
+        conn.commit()
+    except DatabaseError as e:
+        conn.close()
+        raise HTTPException(status_code=500, detail=f"Database error updating password: {str(e)}")
+        
+    conn.close()
+    return {"message": "Password reset successfully. You can now login with your new password."}
+
 
 @app.get("/api/auth/google/login")
 def google_login():
@@ -529,6 +752,7 @@ def get_settings(current_user: dict = Depends(auth.get_current_user)):
     # Map integer 1/0 to bool
     ret = dict(row)
     ret["email_reports_enabled"] = bool(ret["email_reports_enabled"])
+    ret["two_factor_enabled"] = bool(ret.get("two_factor_enabled", 1))
     return ret
 
 @app.put("/api/settings", response_model=models.SettingsResponse)
@@ -536,8 +760,13 @@ def update_settings(settings: models.SettingsUpdate, current_user: dict = Depend
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute(
-        "UPDATE settings SET email_reports_enabled = ?, alert_threshold = ? WHERE user_id = ?",
-        (1 if settings.email_reports_enabled else 0, settings.alert_threshold, current_user["id"])
+        "UPDATE settings SET email_reports_enabled = ?, alert_threshold = ?, two_factor_enabled = ? WHERE user_id = ?",
+        (
+            1 if settings.email_reports_enabled else 0,
+            settings.alert_threshold,
+            1 if settings.two_factor_enabled else 0,
+            current_user["id"]
+        )
     )
     conn.commit()
     cursor.execute("SELECT * FROM settings WHERE user_id = ?", (current_user["id"],))
@@ -545,6 +774,7 @@ def update_settings(settings: models.SettingsUpdate, current_user: dict = Depend
     conn.close()
     ret = dict(row)
     ret["email_reports_enabled"] = bool(ret["email_reports_enabled"])
+    ret["two_factor_enabled"] = bool(ret.get("two_factor_enabled", 1))
     return ret
 
 
@@ -820,6 +1050,15 @@ def chat_goal(goal_id: int, data: models.GoalChatRequest, current_user: dict = D
 def download_report(current_user: dict = Depends(auth.get_current_user)):
     report_data = reports.generate_report_content(current_user["id"])
     return HTMLResponse(content=report_data["html"], status_code=200)
+
+@app.post("/api/reports/send-email")
+def trigger_report_email(current_user: dict = Depends(auth.get_current_user)):
+    res = reports.send_monthly_report_email(current_user["id"])
+    if res.get("status") == "success":
+        method = res.get("method", "Email Sent")
+        return {"message": f"Report emailed successfully! ({method})"}
+    else:
+        raise HTTPException(status_code=500, detail="Failed to send report email")
 
 
 # --- RECURRING EXPENSES ROUTES ---

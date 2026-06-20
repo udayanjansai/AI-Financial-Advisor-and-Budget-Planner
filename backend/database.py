@@ -293,9 +293,15 @@ def init_db():
             id SERIAL PRIMARY KEY,
             user_id INTEGER UNIQUE NOT NULL REFERENCES users(id) ON DELETE CASCADE,
             email_reports_enabled INTEGER DEFAULT 1,
-            alert_threshold DOUBLE PRECISION DEFAULT 0.90
+            alert_threshold DOUBLE PRECISION DEFAULT 0.90,
+            two_factor_enabled INTEGER DEFAULT 1
         );
         """)
+        
+        try:
+            cursor.execute("ALTER TABLE settings ADD COLUMN IF NOT EXISTS two_factor_enabled INTEGER DEFAULT 1;")
+        except Exception:
+            pass
         
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS goals (
@@ -320,6 +326,17 @@ def init_db():
             end_date VARCHAR(10),
             is_active INTEGER DEFAULT 1,
             last_processed_date VARCHAR(10)
+        );
+        """)
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS pending_otps (
+            id SERIAL PRIMARY KEY,
+            email VARCHAR(255) NOT NULL,
+            otp VARCHAR(6) NOT NULL,
+            otp_type VARCHAR(50) NOT NULL,
+            expires_at TIMESTAMP NOT NULL,
+            UNIQUE(email, otp_type)
         );
         """)
     else:
@@ -388,9 +405,15 @@ def init_db():
             user_id INTEGER UNIQUE NOT NULL,
             email_reports_enabled INTEGER DEFAULT 1,
             alert_threshold REAL DEFAULT 0.90,
+            two_factor_enabled INTEGER DEFAULT 1,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
         """)
+        
+        try:
+            cursor.execute("ALTER TABLE settings ADD COLUMN two_factor_enabled INTEGER DEFAULT 1;")
+        except Exception:
+            pass
         
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS goals (
@@ -417,6 +440,17 @@ def init_db():
             is_active INTEGER DEFAULT 1,
             last_processed_date TEXT,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        """)
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS pending_otps (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT NOT NULL,
+            otp TEXT NOT NULL,
+            otp_type TEXT NOT NULL,
+            expires_at DATETIME NOT NULL,
+            UNIQUE(email, otp_type)
         );
         """)
         
