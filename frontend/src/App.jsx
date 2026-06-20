@@ -28,6 +28,14 @@ import RecurringExpenses from "./components/RecurringExpenses";
 
 export default function App() {
   const googleAuthEnabled = import.meta.env.VITE_ENABLE_GOOGLE_AUTH === "true";
+  const usernamePattern = "^[A-Za-z][A-Za-z0-9_]{2,29}$";
+  const passwordPattern = "^(?=.*[A-Za-z])(?=.*\\d).{8,}$";
+  const emailPattern = "^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)+$";
+  const registrationRules = {
+    username: "Username must start with a letter and use 3-30 letters, numbers, or underscores only.",
+    password: "Password must be at least 8 characters and include both letters and numbers.",
+    email: "Enter a valid email address, for example name@example.com."
+  };
   const pageMeta = {
     dashboard: { title: "Dashboard", subtitle: "Live financial overview and spending intelligence" },
     expenses: { title: "Expenses", subtitle: "Track daily spend and manage outgoing transactions" },
@@ -119,6 +127,20 @@ export default function App() {
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
     setAuthError("");
+    if (!isLoginView) {
+      if (!new RegExp(usernamePattern).test(username)) {
+        setAuthError(registrationRules.username);
+        return;
+      }
+      if (!new RegExp(passwordPattern).test(password)) {
+        setAuthError(registrationRules.password);
+        return;
+      }
+      if (!new RegExp(emailPattern).test(email)) {
+        setAuthError(registrationRules.email);
+        return;
+      }
+    }
     const endpoint = isLoginView ? "/api/auth/login" : "/api/auth/register";
     const body = isLoginView 
       ? { username, password } 
@@ -215,8 +237,17 @@ export default function App() {
                 placeholder="e.g. investor_bob" 
                 value={username} 
                 onChange={(e) => setUsername(e.target.value)} 
+                pattern={isLoginView ? undefined : usernamePattern}
+                minLength={isLoginView ? undefined : 3}
+                maxLength={isLoginView ? undefined : 30}
+                title={isLoginView ? undefined : registrationRules.username}
                 required 
               />
+              {!isLoginView && (
+                <small style={{ color: "var(--text-dim)", fontSize: "12px" }}>
+                  Start with a letter. Use letters, numbers, and underscores only.
+                </small>
+              )}
             </div>
             
             {!isLoginView && (
@@ -228,6 +259,8 @@ export default function App() {
                   placeholder="e.g. bob@example.com" 
                   value={email} 
                   onChange={(e) => setEmail(e.target.value)} 
+                  pattern={emailPattern}
+                  title={registrationRules.email}
                   required 
                 />
               </div>
@@ -242,7 +275,10 @@ export default function App() {
                   style={{ width: "100%", paddingRight: "44px" }}
                   placeholder="••••••••" 
                   value={password} 
-                  onChange={(e) => setPassword(e.target.value)} 
+                  onChange={(e) => setPassword(e.target.value)}
+                  pattern={isLoginView ? undefined : passwordPattern}
+                  minLength={isLoginView ? undefined : 8}
+                  title={isLoginView ? undefined : registrationRules.password}
                   required 
                 />
                 <button
@@ -266,6 +302,11 @@ export default function App() {
                   {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
+              {!isLoginView && (
+                <small style={{ color: "var(--text-dim)", fontSize: "12px" }}>
+                  Use at least 8 characters with one letter and one number.
+                </small>
+              )}
             </div>
 
             {authError && (

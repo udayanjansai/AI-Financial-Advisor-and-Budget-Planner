@@ -134,6 +134,22 @@ def calculate_financial_health_score(user_id: int) -> Dict[str, Any]:
         (user_id, start_date), one=True
     )
     total_expense = expense_rows["total"] if expense_rows and expense_rows["total"] is not None else 0.0
+
+    if total_income == 0 and total_expense == 0:
+        return {
+            "score": None,
+            "ratios": {
+                "savings_ratio": 0.0,
+                "expense_ratio": 0.0,
+                "budget_discipline": 0.0,
+                "income_stability": 0.0
+            },
+            "strengths": [],
+            "weaknesses": [],
+            "total_income": total_income,
+            "total_expense": total_expense,
+            "has_data": False
+        }
     
     # Ratios
     savings = max(0.0, total_income - total_expense)
@@ -231,7 +247,8 @@ def calculate_financial_health_score(user_id: int) -> Dict[str, Any]:
         "strengths": strengths,
         "weaknesses": weaknesses,
         "total_income": total_income,
-        "total_expense": total_expense
+        "total_expense": total_expense,
+        "has_data": True
     }
 
 # ==========================================
@@ -988,4 +1005,3 @@ def chat_about_savings_goal(user_id: int, goal_id: int, message: str) -> str:
             f"To achieve it by {deadline}, you need to save ₹{req_savings:,.0f} monthly. "
             f"Your current savings behavior is ₹{curr_savings:,.0f}/month, making you {status.lower()}."
         )
-

@@ -288,7 +288,8 @@ export default function Dashboard({ token, activeAlert, dataVersion }) {
     return <div style={{ color: "var(--text-muted)", textAlign: "center", padding: "80px 0" }}>Loading financial dashboard...</div>;
   }
 
-  const { monthly_summary, categories: catSpend, budgets, alerts, health_score, strengths, weaknesses } = data;
+  const { monthly_summary, categories: catSpend, budgets, alerts, health_score, health_has_data, strengths, weaknesses } = data;
+  const hasHealthData = health_has_data !== false && health_score !== null && health_score !== undefined;
 
   // Chart 1: Income vs Expense (Bar Chart)
   const barChartData = {
@@ -710,6 +711,8 @@ export default function Dashboard({ token, activeAlert, dataVersion }) {
               <Activity size={18} style={{ color: "var(--success)" }} /> Financial Health Score
             </h3>
             
+            {hasHealthData ? (
+              <>
             <div style={{
               width: "120px",
               height: "120px",
@@ -747,6 +750,19 @@ export default function Dashboard({ token, activeAlert, dataVersion }) {
                 ))}
               </ul>
             </div>
+              </>
+            ) : (
+              <div style={{ width: "100%", textAlign: "left", padding: "8px 0 4px" }}>
+                <div style={{ border: "1px solid rgba(148, 163, 184, 0.14)", background: "rgba(255, 255, 255, 0.03)", borderRadius: "12px", padding: "16px" }}>
+                  <div style={{ color: "white", fontWeight: "700", fontSize: "15px", marginBottom: "8px" }}>
+                    Not enough data yet
+                  </div>
+                  <p style={{ color: "var(--text-muted)", fontSize: "13px", lineHeight: "1.6" }}>
+                    Add your first income or expense to calculate a meaningful financial health score.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* AI Spending Analyzer */}

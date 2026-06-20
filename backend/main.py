@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import os
+import re
 import secrets
 from urllib.parse import urlencode
 
@@ -105,6 +106,41 @@ def make_unique_username(cursor, email: str, fallback_name: str = "") -> str:
         suffix += 1
         candidate = f"{base}_{suffix}"
 
+USERNAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_]{2,29}$")
+PASSWORD_PATTERN = re.compile(r"^(?=.*[A-Za-z])(?=.*\d).{8,}$")
+EMAIL_PATTERN = re.compile(r"^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$")
+
+def validate_registration_input(user: models.UserRegister):
+    username = user.username.strip()
+    email = user.email.strip()
+
+    if username != user.username:
+        raise HTTPException(status_code=400, detail="Username cannot start or end with spaces")
+    if not USERNAME_PATTERN.fullmatch(username):
+        raise HTTPException(
+            status_code=400,
+            detail="Username must start with a letter and use 3-30 letters, numbers, or underscores only"
+        )
+    if not PASSWORD_PATTERN.fullmatch(user.password):
+        raise HTTPException(
+            status_code=400,
+            detail="Password must be at least 8 characters and include both letters and numbers"
+        )
+    if not EMAIL_PATTERN.fullmatch(email):
+        raise HTTPException(status_code=400, detail="Enter a valid email address")
+
+def is_unique_constraint_error(error: Exception) -> bool:
+    message = str(error).lower()
+    return "23505" in message or "unique constraint" in message or "duplicate key" in message
+
+def get_duplicate_registration_message(error: Exception) -> str:
+    message = str(error).lower()
+    if "users_username" in message or "(username)" in message:
+        return "Username already registered"
+    if "users_email" in message or "(email)" in message:
+        return "Email already registered"
+    return "Account already exists"
+
 # Initialize database on startup
 @app.on_event("startup")
 def startup_event():
@@ -114,6 +150,7 @@ def startup_event():
 
 @app.post("/api/auth/register", response_model=models.Token, status_code=status.HTTP_201_CREATED)
 def register(user: models.UserRegister):
+    validate_registration_input(user)
     conn = get_db()
     cursor = conn.cursor()
     
@@ -143,6 +180,8 @@ def register(user: models.UserRegister):
         conn.commit()
     except DatabaseError as e:
         conn.close()
+        if is_unique_constraint_error(e):
+            raise HTTPException(status_code=400, detail=get_duplicate_registration_message(e))
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
         
     conn.close()
@@ -594,6 +633,7 @@ def get_dashboard_data(current_user: dict = Depends(auth.get_current_user)):
         "budgets": budgets,
         "alerts": budget_alerts,
         "health_score": health["score"],
+        "health_has_data": health.get("has_data", True),
         "strengths": health["strengths"],
         "weaknesses": health["weaknesses"]
     }
