@@ -6,34 +6,34 @@ sdk: docker
 app_port: 7860
 ---
 
-# 📊 FinTracker AI
+#  FinTracker AI
 
 **FinTracker AI** is a premium, full-stack personal finance advisor and budget planner featuring a sleek modern glassmorphism aesthetic. It integrates intelligent AI spending personality analysis, robust multi-factor security, and automated/manual calendar email reporting.
 
 ---
 
-## ✨ Features
+##  Features
 
-### 🛡️ Enhanced Security & Authentication
+###  Enhanced Security & Authentication
 * **OTP-Based User Registration**: Requires verification codes sent via email to complete account creation.
 * **Toggable 2FA (Two-Factor Authentication)**: Users can enable or disable 2FA from their settings. When active, login requires a secure 6-digit OTP code.
 * **Forgot/Reset Password Recovery**: Safe and self-serve credential recovery via email verification.
 
-### 📈 Smart Budgeting & Reports
+###  Smart Budgeting & Reports
 * **Manual Email Reports**: Request calendar-month cash flow summaries instantly directly from your Dashboard header.
 * **Brevo HTTP API Integration**: All transaction/OTP emails are dispatched reliably via the Brevo SMTP API, with a clean local HTML mock fallback for offline development.
 * **Recurring Expense Tracker**: Automates trackable monthly expenses with custom schedules.
 
-### 🧠 AI Personality Analysis
+###  AI Personality Analysis
 * **Gemini AI Spending Analyzer**: Examines budget thresholds and monthly spending patterns to render a custom AI analysis of your spending habits and financial personality.
 
-### 🎨 Premium UI/UX
+###  Premium UI/UX
 * **Glassmorphism Theme**: High-contrast modern dashboard layout built with responsive components.
 * **Custom Confirm & Alert Popups**: Seamless, styled overlay modals replacing native browser alerts and confirmations for deleting goals, managing expenses, and system messages.
 
 ---
 
-## 🔑 Environment Variables & Space Secrets
+##  Environment Variables & Space Secrets
 
 To utilize the full capabilities of FinTracker AI, configure the following secrets under **Settings > Variables and secrets** in Hugging Face (or inside a local `.env` file):
 
