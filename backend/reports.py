@@ -265,7 +265,7 @@ def send_brevo_email(to_email: str, subject: str, html_body: str, text_body: str
     }
 
 
-def send_otp_notification(email: str, otp: str, purpose: str) -> dict:
+def send_otp_notification(email: str, otp: str, purpose: str, username: str = None) -> dict:
     if purpose == "register":
         subject = "FinTracker AI - Registration OTP"
         headline = "Complete Your Registration"
@@ -277,7 +277,8 @@ def send_otp_notification(email: str, otp: str, purpose: str) -> dict:
     elif purpose == "reset":
         subject = "FinTracker AI - Password Reset Request"
         headline = "Reset Your Password"
-        body_text = "A password reset request was made for your FinTracker AI account. Use the following One-Time Password (OTP) to complete your password reset:"
+        user_info = f" (username: <strong>{username}</strong>)" if username else ""
+        body_text = f"A password reset request was made for your FinTracker AI account{user_info}. Use the following One-Time Password (OTP) to complete your password reset:"
     else:
         subject = "FinTracker AI Code"
         headline = "One-Time Password Code"

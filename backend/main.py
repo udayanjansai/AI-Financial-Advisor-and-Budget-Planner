@@ -380,7 +380,7 @@ def forgot_password(req: models.ForgotPasswordRequest):
     # Check user exists
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute("SELECT id FROM users WHERE LOWER(email) = ?", (email,))
+    cursor.execute("SELECT id, username FROM users WHERE LOWER(email) = ?", (email,))
     db_user = cursor.fetchone()
     conn.close()
     
@@ -397,7 +397,7 @@ def forgot_password(req: models.ForgotPasswordRequest):
     save_pending_otp(email, otp, "reset")
     
     # Send email
-    reports.send_otp_notification(email, otp, "reset")
+    reports.send_otp_notification(email, otp, "reset", username=db_user["username"])
     
     return {"message": "Password reset OTP sent successfully to your email"}
 
