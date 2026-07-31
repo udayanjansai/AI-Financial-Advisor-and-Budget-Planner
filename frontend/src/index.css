@@ -1027,6 +1027,25 @@ input::-ms-reveal {
   color: var(--text-primary) !important;
 }
 
+/* Global attribute overrides to intercept and override hardcoded inline white colors in React components */
+[style*="color: white"],
+[style*="color:white"],
+[style*="color: rgb(255, 255, 255)"],
+[style*="color:rgb(255, 255, 255)"],
+[style*="color: #fff"],
+[style*="color:#fff"],
+[style*="color: #ffffff"],
+[style*="color:#ffffff"] {
+  color: var(--text-primary) !important;
+}
+
+/* Override option menus to use light theme backgrounds instead of hardcoded dark backgrounds */
+select option,
+.form-control option {
+  background-color: var(--panel-bg-strong) !important;
+  color: var(--text-primary) !important;
+}
+
 /* Also ensure tables, chatbot prompts, and logs are aligned */
 .finance-table th {
   color: var(--text-muted) !important;
