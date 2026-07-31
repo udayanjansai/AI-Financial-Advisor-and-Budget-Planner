@@ -10,12 +10,13 @@ from typing import Dict, Any, List
 
 # Try to import sklearn and xgboost
 try:
-    from sklearn.linear_model import LinearRegression
+    from sklearn.linear_model import LinearRegression, Ridge
     from sklearn.ensemble import RandomForestRegressor
     import xgboost as xgb
     ML_AVAILABLE = True
 except ImportError:
     ML_AVAILABLE = False
+
 
 # Try to import Gemini
 import google.generativeai as genai
@@ -83,10 +84,13 @@ def analyze_spending(user_id: int) -> str:
             prompt = (
                 "You are an expert financial counselor. Review the following spending data of a user:\n"
                 f"{data_summary}\n"
-                "Provide a brief spending analysis (maximum 4 bullet points). Highlight significant increases, "
-                "suggest specific actionable ways to save, and calculate how much they can save (e.g. 'Reducing food spending by 10% can save ₹X'). "
+                "Provide a brief spending analysis (maximum 4 bullet points) based strictly on the provided numbers.\n"
+                "CRITICAL: Do NOT invent, hallucinate, or assume any transaction values, categories, or percentages that are not explicitly listed in the data summary above.\n"
+                "Highlight actual changes between months, suggest specific actionable ways to save from their active categories, "
+                "and calculate potential savings based ONLY on the numbers provided. "
                 "Use Indian Rupee (₹) symbols and respond in a helpful, friendly tone."
             )
+
             response = model.generate_content(prompt)
             return response.text
         except Exception as e:
@@ -304,8 +308,8 @@ def predict_next_month_expenses(user_id: int) -> Dict[str, float]:
     # Drop NaNs for training
     df_features = df_daily.dropna()
     
-    # Fallback if dropna leaves us empty
-    if df_features.empty or len(df_features) < 3:
+    # Fallback if dropna leaves us empty or we have insufficient training days (need at least 10 days)
+    if df_features.empty or len(df_features) < 10:
         avg_monthly = df["amount"].sum() / max(1, len(df["date"].dt.to_period("M").unique()))
         return {
             "linear_regression": round(avg_monthly, 2),
@@ -318,6 +322,9 @@ def predict_next_month_expenses(user_id: int) -> Dict[str, float]:
     X = df_features[["day_of_week", "day_of_month", "lag_1", "lag_2", "rolling_mean_3"]].values
     y = df_features["amount"].values
     
+    # Define a safe upper bound for daily spending to prevent recursive overflow anomalies
+    max_limit = max(2000.0, float(np.max(y)) * 2.0)
+    
     # Next month prediction: we simulate next 30 days recursively
     pred_lr_total = 0.0
     pred_rf_total = 0.0
@@ -325,8 +332,8 @@ def predict_next_month_expenses(user_id: int) -> Dict[str, float]:
     
     # Train models
     try:
-        # 1. Linear Regression
-        lr = LinearRegression()
+        # 1. Ridge Regression (regularized to prevent coefficient explosion)
+        lr = Ridge(alpha=10.0)
         lr.fit(X, y)
         
         # 2. Random Forest
@@ -351,19 +358,22 @@ def predict_next_month_expenses(user_id: int) -> Dict[str, float]:
             
             # Predict LR
             feat_lr = np.array([[day_of_week, day_of_month, lr_history[-1], lr_history[-2], np.mean(lr_history[-3:])]])
-            p_lr = max(0.0, float(lr.predict(feat_lr)[0]))
+            p_lr = float(lr.predict(feat_lr)[0])
+            p_lr = max(0.0, min(p_lr, max_limit))
             pred_lr_total += p_lr
             lr_history.append(p_lr)
             
             # Predict RF
             feat_rf = np.array([[day_of_week, day_of_month, rf_history[-1], rf_history[-2], np.mean(rf_history[-3:])]])
-            p_rf = max(0.0, float(rf.predict(feat_rf)[0]))
+            p_rf = float(rf.predict(feat_rf)[0])
+            p_rf = max(0.0, min(p_rf, max_limit))
             pred_rf_total += p_rf
             rf_history.append(p_rf)
             
             # Predict XGBoost
             feat_xgb = np.array([[day_of_week, day_of_month, xgb_history[-1], xgb_history[-2], np.mean(xgb_history[-3:])]])
-            p_xgb = max(0.0, float(xgb_model.predict(feat_xgb)[0]))
+            p_xgb = float(xgb_model.predict(feat_xgb)[0])
+            p_xgb = max(0.0, min(p_xgb, max_limit))
             pred_xgb_total += p_xgb
             xgb_history.append(p_xgb)
             
