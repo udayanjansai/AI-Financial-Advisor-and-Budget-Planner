@@ -116,24 +116,24 @@ def analyze_spending(user_id: int) -> str:
 # 2. Financial Health Score
 # ==========================================
 def calculate_financial_health_score(user_id: int) -> Dict[str, Any]:
-    # Calculate ratios based on last 30 days
+    # Calculate ratios based on all-time data to align with dashboard totals
     now = datetime.now()
-    start_date = (now - timedelta(days=30)).strftime("%Y-%m-%d")
     
     # 1. Income Stability & Total Income
     income_rows = query_db(
-        "SELECT SUM(amount) as total, COUNT(DISTINCT source) as sources FROM income WHERE user_id = ? AND date >= ?",
-        (user_id, start_date), one=True
+        "SELECT SUM(amount) as total, COUNT(DISTINCT source) as sources FROM income WHERE user_id = ?",
+        (user_id,), one=True
     )
     total_income = income_rows["total"] if income_rows and income_rows["total"] is not None else 0.0
     num_sources = income_rows["sources"] if income_rows and income_rows["sources"] is not None else 0
     
     # 2. Total Expense
     expense_rows = query_db(
-        "SELECT SUM(amount) as total FROM expenses WHERE user_id = ? AND date >= ?",
-        (user_id, start_date), one=True
+        "SELECT SUM(amount) as total FROM expenses WHERE user_id = ?",
+        (user_id,), one=True
     )
     total_expense = expense_rows["total"] if expense_rows and expense_rows["total"] is not None else 0.0
+
 
     if total_income == 0 and total_expense == 0:
         return {
