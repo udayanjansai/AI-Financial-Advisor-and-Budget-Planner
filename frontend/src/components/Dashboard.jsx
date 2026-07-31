@@ -381,12 +381,12 @@ export default function Dashboard({ token, activeAlert, dataVersion }) {
     },
     scales: {
       y: {
-        grid: { color: "rgba(255, 255, 255, 0.05)" },
-        ticks: { color: "#9ca3af" }
+        grid: { color: "rgba(0, 0, 0, 0.05)" },
+        ticks: { color: "#475569" }
       },
       x: {
         grid: { display: false },
-        ticks: { color: "#9ca3af" }
+        ticks: { color: "#475569" }
       }
     }
   };
@@ -420,7 +420,7 @@ export default function Dashboard({ token, activeAlert, dataVersion }) {
     plugins: {
       legend: {
         position: "right",
-        labels: { color: "#9ca3af", font: { family: "Plus Jakarta Sans", size: 11 } }
+        labels: { color: "#475569", font: { family: "Plus Jakarta Sans", size: 11 } }
       },
       tooltip: {
         callbacks: {
@@ -791,33 +791,33 @@ export default function Dashboard({ token, activeAlert, dataVersion }) {
                 width: "104px",
                 height: "104px",
                 borderRadius: "50%",
-                background: "#0d0a21",
+                background: "var(--panel-bg-strong)",
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center"
               }}>
-                <span style={{ fontSize: "32px", fontWeight: "700", color: "white" }}>{health_score}</span>
+                <span style={{ fontSize: "32px", fontWeight: "700", color: "var(--text-primary)" }}>{health_score}</span>
                 <span style={{ fontSize: "11px", color: "var(--text-muted)" }}> wellness score </span>
               </div>
             </div>
 
             <div style={{ width: "100%", textAlign: "left" }}>
-              <h4 style={{ fontSize: "14px", color: "white", marginBottom: "8px" }}>Strengths / Weaknesses</h4>
+              <h4 style={{ fontSize: "14px", color: "var(--text-primary)", marginBottom: "8px" }}>Strengths / Weaknesses</h4>
               <ul style={{ listStyle: "none", fontSize: "13px", display: "flex", flexDirection: "column", gap: "6px" }}>
                 {strengths && strengths.map((s, idx) => (
-                  <li key={`str-${idx}`} style={{ color: "#a7f3d0" }}>✓ {s}</li>
+                  <li key={`str-${idx}`} style={{ color: "var(--success)" }}>✓ {s}</li>
                 ))}
                 {weaknesses && weaknesses.filter(w => w !== "None detected! Keep maintaining this structure.").map((w, idx) => (
-                  <li key={`wk-${idx}`} style={{ color: "#fca5a5" }}>✗ {w}</li>
+                  <li key={`wk-${idx}`} style={{ color: "var(--danger)" }}>✗ {w}</li>
                 ))}
               </ul>
             </div>
               </>
             ) : (
               <div style={{ width: "100%", textAlign: "left", padding: "8px 0 4px" }}>
-                <div style={{ border: "1px solid rgba(148, 163, 184, 0.14)", background: "rgba(255, 255, 255, 0.03)", borderRadius: "12px", padding: "16px" }}>
-                  <div style={{ color: "white", fontWeight: "700", fontSize: "15px", marginBottom: "8px" }}>
+                <div style={{ border: "1px solid var(--panel-border)", background: "rgba(255, 255, 255, 0.3)", borderRadius: "12px", padding: "16px" }}>
+                  <div style={{ color: "var(--text-primary)", fontWeight: "700", fontSize: "15px", marginBottom: "8px" }}>
                     Not enough data yet
                   </div>
                   <p style={{ color: "var(--text-muted)", fontSize: "13px", lineHeight: "1.6" }}>
