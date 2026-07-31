@@ -144,7 +144,12 @@ def get_duplicate_registration_message(error: Exception) -> str:
 # Initialize database on startup
 @app.on_event("startup")
 def startup_event():
-    init_db()
+    try:
+        init_db()
+    except Exception as e:
+        import sys
+        print(f"CRITICAL ERROR: Failed to initialize database on startup: {e}", file=sys.stderr)
+
 
 # --- AUTH HELPERS ---
 
