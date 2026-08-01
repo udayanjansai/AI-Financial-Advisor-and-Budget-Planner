@@ -161,6 +161,24 @@ export default function App() {
     setIsForgotPasswordView(false);
   };
 
+  // Intercept all API 401 Unauthorized errors to automatically log the user out
+  useEffect(() => {
+    const originalFetch = window.fetch;
+    window.fetch = async (...args) => {
+      const res = await originalFetch(...args);
+      if (res.status === 401) {
+        localStorage.removeItem("token");
+        setToken("");
+        setUser(null);
+        resetAuthState();
+      }
+      return res;
+    };
+    return () => {
+      window.fetch = originalFetch;
+    };
+  }, []);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const googleToken = params.get("google_token");
